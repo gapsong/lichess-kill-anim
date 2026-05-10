@@ -3685,14 +3685,28 @@
     constructor() {
       this.snapshotId = null;
       this.seen = /* @__PURE__ */ new Set();
+      this.lastActivePly = null;
     }
     next(snapshot) {
       if (!snapshot) return [];
       if (snapshot.id !== this.snapshotId) {
         this.snapshotId = snapshot.id;
         this.seen = /* @__PURE__ */ new Set();
+        this.lastActivePly = null;
       }
-      return deriveEvents(snapshot).filter((event) => {
+      const allEvents = deriveEvents(snapshot);
+      const activePly = snapshot.activePly ?? null;
+      if (activePly != null) {
+        if (activePly === this.lastActivePly) return [];
+        this.lastActivePly = activePly;
+        const activeEvent = allEvents.find((e) => e.ply === activePly);
+        if (!activeEvent) return [];
+        const key = `${activeEvent.ply}:${activeEvent.san}:${activeEvent.from}:${activeEvent.to}`;
+        if (this.seen.has(key)) return [];
+        this.seen.add(key);
+        return [activeEvent];
+      }
+      return allEvents.filter((event) => {
         const key = `${event.ply}:${event.san}:${event.from}:${event.to}`;
         if (this.seen.has(key)) return false;
         this.seen.add(key);
@@ -3888,20 +3902,22 @@
     "l4x kwdb"
   ];
   var FEN_SELECTORS = [
-    "[data-fen]",
-    "input.copyable",
-    ".analyse__underboard input"
+    "[data-fen]"
+    // input.copyable and .analyse__underboard input are intentionally excluded:
+    // they reflect the CURRENT position FEN, not the game's starting FEN.
   ];
   function readSnapshot(document2, location2 = globalThis.location) {
     const sanMoves = readSanMoves(document2);
     if (!sanMoves.length) return null;
     const initialFen = readInitialFen(document2);
     const puzzleId = readPuzzleId(document2);
+    const activePly = readActivePly(document2);
     const context = puzzleId ? `puzzle:${puzzleId}|${initialFen ?? "start"}` : initialFen ?? "start";
     return {
       id: `${location2?.pathname ?? "lichess"}|${context}`,
       initialFen,
-      sanMoves
+      sanMoves,
+      activePly
     };
   }
   function readSanMoves(document2) {
@@ -3924,6 +3940,13 @@
     const links = [...document2.querySelectorAll('main.puzzle a[href*="/training/"]')];
     const link = links.find((element) => /^#[A-Za-z0-9]+$/.test(element.textContent?.trim() ?? ""));
     return link?.textContent?.trim().slice(1) || null;
+  }
+  function readActivePly(document2) {
+    const activeSan = document2.querySelector("move.active san");
+    if (!activeSan) return null;
+    const allSans = [...document2.querySelectorAll("move san")];
+    const index = allSans.indexOf(activeSan);
+    return index >= 0 ? index + 1 : null;
   }
   function normalizeSan(value) {
     return value?.trim().replace(/\s+/g, "").replace(/^\d+\.(\.\.)?/, "").replace(/[✓✗]+$/g, "").replace(/[!?]+$/g, "") || null;

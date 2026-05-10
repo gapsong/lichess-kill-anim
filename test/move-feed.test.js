@@ -16,7 +16,8 @@ test('reads SAN moves from a Lichess-style move list', () => {
   assert.deepEqual(readSnapshot(dom.window.document, { pathname: '/abc123' }), {
     id: '/abc123|start',
     initialFen: null,
-    sanMoves: ['e4', 'd5', 'exd5']
+    sanMoves: ['e4', 'd5', 'exd5'],
+    activePly: null
   });
 });
 
@@ -35,7 +36,8 @@ test('reads SAN moves from the Lichess TV custom move list', () => {
   assert.deepEqual(readSnapshot(dom.window.document, { pathname: '/tv' }), {
     id: '/tv|start',
     initialFen: null,
-    sanMoves: ['e4', 'Nf6', 'e5', 'Nd5', 'Nf3', 'd6', 'Nc3', 'dxe5']
+    sanMoves: ['e4', 'Nf6', 'e5', 'Nd5', 'Nf3', 'd6', 'Nc3', 'dxe5'],
+    activePly: null
   });
 });
 
@@ -80,7 +82,8 @@ test('reads SAN moves from the Lichess puzzle move history', () => {
   assert.deepEqual(readSnapshot(dom.window.document, { pathname: '/training' }), {
     id: '/training|puzzle:BS3bW|start',
     initialFen: null,
-    sanMoves: ['d4', 'e6', 'c4', 'd5', 'Nc3', 'Nf6', 'Bd3', 'dxc4', 'Bxc4']
+    sanMoves: ['d4', 'e6', 'c4', 'd5', 'Nc3', 'Nf6', 'Bd3', 'dxc4', 'Bxc4'],
+    activePly: null
   });
 });
 
@@ -122,6 +125,44 @@ test('normalizes Lichess puzzle feedback markers from SAN moves', () => {
     'Ke7',
     'Nd5#'
   ]);
+});
+
+test('reads activePly from the active move element on the analysis board', () => {
+  const dom = new JSDOM(`
+    <div class="tview2">
+      <move><san>e4</san></move>
+      <move><san>d5</san></move>
+      <move class="active"><san>exd5</san></move>
+    </div>
+  `);
+
+  const snapshot = readSnapshot(dom.window.document, { pathname: '/analysis' });
+  assert.equal(snapshot?.activePly, 3);
+});
+
+test('activePly is null when no move.active element exists', () => {
+  const dom = new JSDOM(`
+    <l4x>
+      <kwdb>e4</kwdb><kwdb>Nf6</kwdb>
+    </l4x>
+  `);
+
+  assert.equal(readSnapshot(dom.window.document, { pathname: '/tv' })?.activePly, null);
+});
+
+test('does not use input.copyable as initialFen because it reflects current position', () => {
+  const dom = new JSDOM(`
+    <div class="tview2">
+      <move><san>e4</san></move>
+      <move><san>d5</san></move>
+      <move class="active"><san>exd5</san></move>
+    </div>
+    <input class="copyable" value="rnbqkbnr/ppp1pppp/8/3P4/8/8/PPPP1PPP/RNBQKBNR b KQkq - 0 2" />
+  `);
+
+  const snapshot = readSnapshot(dom.window.document, { pathname: '/analysis' });
+  assert.equal(snapshot?.initialFen, null);
+  assert.equal(snapshot?.id, '/analysis|start');
 });
 
 test('returns null when no move list is available', () => {
