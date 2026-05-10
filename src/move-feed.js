@@ -8,9 +8,9 @@ const MOVE_SELECTORS = [
 ];
 
 const FEN_SELECTORS = [
-  '[data-fen]',
-  'input.copyable',
-  '.analyse__underboard input'
+  '[data-fen]'
+  // input.copyable and .analyse__underboard input are intentionally excluded:
+  // they reflect the CURRENT position FEN, not the game's starting FEN.
 ];
 
 export function readSnapshot(document, location = globalThis.location) {
@@ -19,6 +19,7 @@ export function readSnapshot(document, location = globalThis.location) {
 
   const initialFen = readInitialFen(document);
   const puzzleId = readPuzzleId(document);
+  const activePly = readActivePly(document);
   const context = puzzleId
     ? `puzzle:${puzzleId}|${initialFen ?? 'start'}`
     : (initialFen ?? 'start');
@@ -26,7 +27,8 @@ export function readSnapshot(document, location = globalThis.location) {
   return {
     id: `${location?.pathname ?? 'lichess'}|${context}`,
     initialFen,
-    sanMoves
+    sanMoves,
+    activePly
   };
 }
 
@@ -57,6 +59,15 @@ function readPuzzleId(document) {
   const links = [...document.querySelectorAll('main.puzzle a[href*="/training/"]')];
   const link = links.find((element) => /^#[A-Za-z0-9]+$/.test(element.textContent?.trim() ?? ''));
   return link?.textContent?.trim().slice(1) || null;
+}
+
+function readActivePly(document) {
+  const activeSan = document.querySelector('move.active san');
+  if (!activeSan) return null;
+
+  const allSans = [...document.querySelectorAll('move san')];
+  const index = allSans.indexOf(activeSan);
+  return index >= 0 ? index + 1 : null;
 }
 
 function normalizeSan(value) {
