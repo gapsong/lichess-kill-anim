@@ -56,6 +56,25 @@ test('applies dx and dy as square-unit offsets', () => {
   assert.equal(sample.y, 75);
 });
 
+test('samples animated sprite frames over time', () => {
+  const layer = {
+    sheet: 'debug',
+    frames: [0, 1, 2, 3],
+    frameDurationMs: 80,
+    keyframes: [
+      { t: 0, ref: 'attacker.from' },
+      { t: 400, ref: 'attacker.to' }
+    ]
+  };
+
+  assert.equal(sampleLayer(layer, renderEvent, 0).frame, 0);
+  assert.equal(sampleLayer(layer, renderEvent, 79).frame, 0);
+  assert.equal(sampleLayer(layer, renderEvent, 80).frame, 1);
+  assert.equal(sampleLayer(layer, renderEvent, 160).frame, 2);
+  assert.equal(sampleLayer(layer, renderEvent, 240).frame, 3);
+  assert.equal(sampleLayer(layer, renderEvent, 320).frame, 0);
+});
+
 test('does not sample before the first or after the last keyframe', () => {
   const layer = {
     keyframes: [

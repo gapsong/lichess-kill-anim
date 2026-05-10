@@ -105,13 +105,19 @@
     const to = resolveKeyframe(next, renderEvent);
     return {
       sheet: layer.sheet,
-      frame: layer.frame,
+      frame: sampleFrame(layer, elapsedMs),
       x: lerp(from.x, to.x, progress),
       y: lerp(from.y, to.y, progress),
       scale: lerp(from.scale, to.scale, progress),
       alpha: lerp(from.alpha, to.alpha, progress),
       rotation: lerp(from.rotation, to.rotation, progress)
     };
+  }
+  function sampleFrame(layer, elapsedMs) {
+    if (!layer.frames) return layer.frame;
+    const frameDurationMs = layer.frameDurationMs ?? 100;
+    const index = Math.floor(elapsedMs / frameDurationMs) % layer.frames.length;
+    return layer.frames[index];
   }
   function resolveKeyframe(keyframe, renderEvent) {
     const ref = resolveRef(keyframe.ref, renderEvent);
@@ -3701,10 +3707,10 @@
     version: 1,
     spritesheets: {
       debug: {
-        image: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAMAAAAAgCAYAAABEmHeFAAACBElEQVR4nO2bS2rEMBAF+2A5hNdzppwk65wp1+iQkAbjeMb69Fd+BdqOW1AFHiMR3RzeET2LF/y1sazoWUAwfCB6Hmv28iMA8C+AlSM4yo8AwC93iMBC/o+N+WfpTNgGv7/xq+U5y1KsHIGl/F4RXInvGsL2yXy2TB/qwIoReMhvGUGv+GYhPJN+tRhWisBTfosIZuVXi6BXfq0I+PFgjdX93AUiiJBfMwIt+acjGJVfI4KoAKh4BJHya0SgLf9wBLPyz0YQGQAVjSCD/LMRpAhAS/6ZCKIDoGIRZJJ/NIJRmdUjQAC7OQpEkFH+kQhmBUYABgFQ8ggyy98TgZa807+jLf9oBJkCoKQRVJC/NQIEcNxIsgAoWQSV5G+JQPMLDgIwCoCSRFBR/qsIEMBxE0kDoOAIrE51IoA/EEDjfAERWB9pxisQAuib0TECr/P8t/8TTPgM2jenQwTel1m85ScEcLKRIgGQcQRRN7k85Rdm5dWKCAGMzGsQQfQ1Rk/5KdNRCMJhuLGZFSOIll/wkl9olbl3DQ0TJT8VDYCUIsgiv+AlP2ULgG54IUaDmQiyyS94yC+kkV/wln8FRiLIKr/gIb+QRv4jkL6dngiyyy94yC+kkx/00xJBFfkFD/n3QPzivIqgmvyCl/x7IH5hziKoKj8AQ1wFED0fAOY8CyB6rjvyDXo+HAy4eP9mAAAAAElFTkSuQmCC",
+        image: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAYAAAAAgCAYAAAAbrK/lAAAEPElEQVR4nO2czW0bMRBGWZjPOauIFJEi0kE68DlnFaGzz+nAZwYKxAWz3uWSw/kj+T1gYcCWOBRhvGfLkkMAAIBBiTH+tt4DAICB+PkjWu9Bmhjj9I9REwQghPhxuz8v630A0MUzADNHIL6w3sdMrB4AyB9MQwrAjBGIGdZ7mYX79/hYOQCQP5iKPAAzRSDuuLz94/aHfQ8Ca1rylL9VAOLPt8fRpboHyB9IEmNU/YYOBwGYIQJ7+dcGgFPY3OtZk+SfAvD8KD3zTPoWMaiRP+IAungGABHogyL/kAmbQ9qca+15v0X1qOTyzwMgGYFW+UtGoFb+ogH49h7j0SU2MIRwu8dYuiRn73n79RmPLs09SJ9HCgAiQIMq/+3+DOKWln+6uNc+Yy//fQAkIkCVv0QEzOV/Jn7JEFyJTjMEZ+LXDIHmeSACNHrlv63TIXAt+WtF4Ej+RwHgjECv/DkjMIz8OSPQKjupCNSKXzoEFueBCLTBJf9tPYLIteUvHYEz+Z8FgCMCXPLniMBw8ueKgIcAUOUvEQGr80AE6uCW/7Zug9Ct5C8VgZL8SwHoiQBF6FIR4JI/ORBU+fdGgCo7zgj0yp8zAtbngQiUkZL/tn6F2K3lzx2BK/lfBYAagR6JcwZgePn3RMBaeAEB+AIicIy0/Lc5BcF7kT9XBGrkXxMASgR6Bc4RAHP5B8MA9MqOQ3pc8ueIgIfzSCACuz0pyX+bdyB6b/LvjUCt/GsD0BIBjp/ge9dwIf+AACAAJyACr70oy3+bmwnfq/ypEWiRf0sAaiPA9vQN9SkkRflfxgEBQADOWD0CVvLf5g8g/9YItMq/NQA1EbAMgLb8i7fhkj8lAh6EhwBcs2oErOUfFAIQlH4DeArc8vqyH6MAuJJ/YtXfALjl3xsB6/MosVoEPMrfawSoMz3+DaD1MbSs41L+YfFXAXmRv5fzKLFKBLzJv/Q5TlZ6FZDFH4Fdyj8gAAhAA7NHwKv8a77GAd4HoPsy0G0ty1cEWQYgGL8T2FsAgpN3RpeYNQLe5d9ymx405Z/oCQB1Jt4IlmEl/4AAfMF7AMKEERhF/pTbUtCUf4ISgJ55JYmfyZxyn+IePMg/YSH/BEF4H/nVM9uD/PePx7P8E7NEYDT599ynBU35J1oCwDGvRugtV9NsT/JPWMg/p1Z0sweg9TysGD0Co8qf4741aMo/URMAznkW8q/al9V/B7WSfwucAQgO/hso9+PRZNQIjC5/zjVKaMo/UQqAxDzI/wCP4k9ICNP4ef9hAxCyCJjMJkRgFvlLrOWFowBIzoP8wT80xT8TVgEIjRHwIP+QSdvreh7IA6AxD/IHGxD/WFADoLvLbB8Csp4tAOEVAa0A5GhJ/7+ZkD8AdFoDoLs7QMUiAN6A/AGooDYAursCPaweAMgfgAauAqC7G9DLygGA/AEAS7NqALjk/xdRIn4tkIvCOAAAAABJRU5ErkJggg==",
         frameWidth: 32,
         frameHeight: 32,
-        frames: 6,
+        frames: 12,
         drawSize: 72
       }
     },
@@ -3720,10 +3726,11 @@
           {
             id: "attacker",
             sheet: "debug",
-            frame: 0,
+            frames: [0, 1, 2, 3],
+            frameDurationMs: 80,
             keyframes: [
               { t: 0, ref: "attacker.from", scale: 0.8, alpha: 1 },
-              { t: 250, ref: "attacker.to", scale: 1.1, alpha: 0 }
+              { t: 320, ref: "attacker.to", scale: 1.1, alpha: 0 }
             ]
           }
         ]
@@ -3734,7 +3741,8 @@
           {
             id: "slash",
             sheet: "debug",
-            frame: 2,
+            frames: [4, 5, 6, 7],
+            frameDurationMs: 70,
             keyframes: [
               { t: 180, ref: "victim.at", rotation: -0.5, scale: 0.6, alpha: 0 },
               { t: 260, ref: "victim.at", rotation: 0.3, scale: 1.4, alpha: 1 },
@@ -3749,7 +3757,8 @@
           {
             id: "victim-break",
             sheet: "debug",
-            frame: 4,
+            frames: [8, 9, 10, 11],
+            frameDurationMs: 90,
             keyframes: [
               { t: 260, ref: "victim.at", scale: 0.7, alpha: 0 },
               { t: 450, ref: "victim.at", scale: 1.2, alpha: 1 },

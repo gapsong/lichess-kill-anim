@@ -27,3 +27,13 @@ test('default pack maps bishops to slash and pawns to attacker movement', () => 
   assert.deepEqual(bishopTimeline.layers.map((layer) => layer.id), ['slash']);
   assert.deepEqual(pawnTimeline.layers.map((layer) => layer.id), ['attacker']);
 });
+
+test('default pack assigns animated frame sequences per piece role', () => {
+  const pawnTimeline = selectTimeline(defaultAnimationPack, { attacker: { piece: 'p' } });
+  const bishopTimeline = selectTimeline(defaultAnimationPack, { attacker: { piece: 'b' } });
+  const fallbackTimeline = selectTimeline(defaultAnimationPack, { attacker: { piece: 'q' } });
+
+  assert.deepEqual(pawnTimeline.layers[0].frames, [0, 1, 2, 3]);
+  assert.deepEqual(bishopTimeline.layers[0].frames, [4, 5, 6, 7]);
+  assert.deepEqual(fallbackTimeline.layers[0].frames, [8, 9, 10, 11]);
+});
