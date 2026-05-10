@@ -3709,11 +3709,13 @@
       }
     },
     rules: [
+      { when: { attacker: { piece: "b" } }, timeline: "bishop-slash" },
+      { when: { attacker: { piece: "p" } }, timeline: "pawn-attack" },
       { when: { attacker: { piece: "*" } }, timeline: "default-capture" }
     ],
     timelines: {
-      "default-capture": {
-        maxDurationMs: 1e3,
+      "pawn-attack": {
+        maxDurationMs: 300,
         layers: [
           {
             id: "attacker",
@@ -3723,7 +3725,12 @@
               { t: 0, ref: "attacker.from", scale: 0.8, alpha: 1 },
               { t: 250, ref: "attacker.to", scale: 1.1, alpha: 0 }
             ]
-          },
+          }
+        ]
+      },
+      "bishop-slash": {
+        maxDurationMs: 450,
+        layers: [
           {
             id: "slash",
             sheet: "debug",
@@ -3733,7 +3740,12 @@
               { t: 260, ref: "victim.at", rotation: 0.3, scale: 1.4, alpha: 1 },
               { t: 420, ref: "victim.at", rotation: 0.8, scale: 1.8, alpha: 0 }
             ]
-          },
+          }
+        ]
+      },
+      "default-capture": {
+        maxDurationMs: 800,
+        layers: [
           {
             id: "victim-break",
             sheet: "debug",
