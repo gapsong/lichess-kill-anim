@@ -3749,13 +3749,29 @@
     }
   };
 
+  // src/board-geometry.js
+  function boardLocalSquareCenter(square, boardSize, isBlackOrientation = false) {
+    let file2 = square.charCodeAt(0) - 97;
+    let rank2 = 8 - Number.parseInt(square[1], 10);
+    if (isBlackOrientation) {
+      file2 = 7 - file2;
+      rank2 = 7 - rank2;
+    }
+    const size = boardSize / 8;
+    return {
+      x: file2 * size + size / 2,
+      y: rank2 * size + size / 2,
+      size
+    };
+  }
+
   // src/render-event.js
   function createRenderEvent(captureEvent, board, snapshotId) {
     const orientation = board.isBlackOrientation ? "black" : "white";
     const squareSize = board.size / 8;
-    const from = boardLocalSquareCenter(captureEvent.from, board.size, board.isBlackOrientation);
-    const to = boardLocalSquareCenter(captureEvent.to, board.size, board.isBlackOrientation);
-    const victimAt = boardLocalSquareCenter(captureEvent.capturedAt, board.size, board.isBlackOrientation);
+    const from = renderPoint(captureEvent.from, board);
+    const to = renderPoint(captureEvent.to, board);
+    const victimAt = renderPoint(captureEvent.capturedAt, board);
     const dx = Math.sign(to.x - from.x);
     const dy = Math.sign(to.y - from.y);
     return {
@@ -3788,18 +3804,9 @@
       }
     };
   }
-  function boardLocalSquareCenter(square, boardSize, isBlackOrientation = false) {
-    let file2 = square.charCodeAt(0) - 97;
-    let rank2 = 8 - Number.parseInt(square[1], 10);
-    if (isBlackOrientation) {
-      file2 = 7 - file2;
-      rank2 = 7 - rank2;
-    }
-    const squareSize = boardSize / 8;
-    return {
-      x: file2 * squareSize + squareSize / 2,
-      y: rank2 * squareSize + squareSize / 2
-    };
+  function renderPoint(square, board) {
+    const { x, y } = boardLocalSquareCenter(square, board.size, board.isBlackOrientation);
+    return { x, y };
   }
 
   // src/spritesheet.js
