@@ -17,13 +17,21 @@ export function sampleLayer(layer, renderEvent, elapsedMs) {
 
   return {
     sheet: layer.sheet,
-    frame: layer.frame,
+    frame: sampleFrame(layer, elapsedMs),
     x: lerp(from.x, to.x, progress),
     y: lerp(from.y, to.y, progress),
     scale: lerp(from.scale, to.scale, progress),
     alpha: lerp(from.alpha, to.alpha, progress),
     rotation: lerp(from.rotation, to.rotation, progress)
   };
+}
+
+function sampleFrame(layer, elapsedMs) {
+  if (!layer.frames) return layer.frame;
+
+  const frameDurationMs = layer.frameDurationMs ?? 100;
+  const index = Math.floor(elapsedMs / frameDurationMs) % layer.frames.length;
+  return layer.frames[index];
 }
 
 function resolveKeyframe(keyframe, renderEvent) {
