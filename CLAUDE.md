@@ -27,10 +27,18 @@ Wichtige Module:
 - `src/move-feed.js`: liest Lichess-Zuglisten aus dem DOM
 - `src/board-geometry.js`: rechnet Squares in Pixelkoordinaten um
 - `src/event-stream.js`: dedupliziert Events ueber MutationObserver-Scans
-- `src/userscript-entry.js`: Tampermonkey-Einstieg, Toasts und Animationen
+- `src/render-event.js`: reichert CaptureEvents mit board-lokalen Canvas-Koordinaten an
+- `src/canvas-overlay.js`: verwaltet ein board-lokales Canvas ueber `cg-board`
+- `src/animation-pack.js`: waehlt deklarative Timeline-Rules
+- `src/timeline.js`: interpoliert Keyframes
+- `src/spritesheet.js`: laedt Spritesheets und zeichnet Frames
+- `src/canvas-sprite-renderer.js`: spielt parallele Canvas-Sprite-Timelines
+- `src/default-animation-pack.js`: eingebettetes Debug-Spritesheet und Default-Timeline
+- `src/userscript-entry.js`: Tampermonkey-Einstieg, Toasts und Canvas-Renderer
 - `scripts/build-userscript.mjs`: baut die installierbare Datei
 
 Das alte Problem `square.last-move` ist entfernt. Turm-Richtung kommt jetzt aus `event.from -> event.to`.
+Die alten CSS/DOM-Animationen mit `.ka` sind im Canvas-Branch ersetzt. Animationen laufen ueber `#lichess-kill-overlay`.
 
 ## Lichess-DOM-Wissen
 
@@ -74,7 +82,9 @@ Die aktuelle Architektur ist:
 - `ChessState`: rekonstruiert Spielzustand aus Start-FEN und SAN-Zuegen
 - `BoardGeometry`: rechnet Squares in Pixelkoordinaten um
 - `CaptureEventStream`: dedupliziert CaptureEvents
-- `userscript-entry`: rendert Toasts und Animationen
+- `RenderEvent`: mappt CaptureEvent auf board-lokale Canvas-Daten
+- `CanvasSpriteRenderer`: rendert deklarative Sprite-Timelines auf ein Canvas
+- `userscript-entry`: rendert Toasts und startet Canvas-Animationen
 
 Single Source of Truth fuer Schachlogik ist der eigene Chess-State mit `chess.js`. Der sichtbare Board-DOM ist nur Input fuer Move-Liste und Pixel-Geometrie.
 

@@ -9,27 +9,182 @@
 // @run-at       document-idle
 // ==/UserScript==
 (() => {
-  // src/board-geometry.js
-  function squareCenter(square, boardRect, isBlackOrientation = false) {
-    let file2 = square.charCodeAt(0) - 97;
-    let rank2 = 8 - Number.parseInt(square[1], 10);
-    if (isBlackOrientation) {
-      file2 = 7 - file2;
-      rank2 = 7 - rank2;
+  // src/canvas-overlay.js
+  var CanvasOverlay = class {
+    constructor({
+      document: document2 = globalThis.document,
+      devicePixelRatio = globalThis.devicePixelRatio ?? 1,
+      ResizeObserver = globalThis.ResizeObserver,
+      getContext = (canvas) => canvas.getContext?.("2d")
+    } = {}) {
+      this.document = document2;
+      this.devicePixelRatio = devicePixelRatio;
+      this.ResizeObserver = ResizeObserver;
+      this.getContext = getContext;
+      this.canvas = null;
+      this.board = null;
+      this.resizeObserver = null;
     }
-    const size = boardRect.width / 8;
+    attach() {
+      this.board = this.document.querySelector("cg-board");
+      if (!this.board) return null;
+      this.canvas = this.document.getElementById("lichess-kill-overlay");
+      if (!this.canvas) {
+        this.canvas = this.document.createElement("canvas");
+        this.canvas.id = "lichess-kill-overlay";
+        Object.assign(this.canvas.style, {
+          position: "fixed",
+          pointerEvents: "none",
+          zIndex: "99998"
+        });
+        this.document.body.appendChild(this.canvas);
+      }
+      if (this.ResizeObserver && !this.resizeObserver) {
+        this.resizeObserver = new this.ResizeObserver(() => this.sync());
+        this.resizeObserver.observe(this.board);
+      }
+      this.sync();
+      return this.canvas;
+    }
+    sync() {
+      if (!this.board) {
+        this.board = this.document.querySelector("cg-board");
+      }
+      if (!this.board || !this.canvas) return null;
+      const rect = this.board.getBoundingClientRect();
+      const size = rect.width;
+      const dpr = this.devicePixelRatio;
+      Object.assign(this.canvas.style, {
+        left: `${rect.left}px`,
+        top: `${rect.top}px`,
+        width: `${size}px`,
+        height: `${size}px`
+      });
+      this.canvas.width = Math.round(size * dpr);
+      this.canvas.height = Math.round(size * dpr);
+      const context = this.getContext(this.canvas);
+      context?.setTransform?.(dpr, 0, 0, dpr, 0, 0);
+      return {
+        canvas: this.canvas,
+        context,
+        size,
+        squareSize: size / 8,
+        isBlackOrientation: this.document.querySelector(".cg-wrap")?.classList.contains("orientation-black") ?? false
+      };
+    }
+  };
+
+  // src/animation-pack.js
+  function selectTimeline(pack, renderEvent) {
+    const rule = pack.rules.find((candidate) => matchesWhen(candidate.when, renderEvent));
+    if (!rule) return null;
+    return pack.timelines[rule.timeline] ?? null;
+  }
+  function matchesWhen(when = {}, renderEvent) {
+    return Object.entries(when).every(([section, expected]) => {
+      const actual = renderEvent[section];
+      if (!actual) return false;
+      return Object.entries(expected).every(([key, value]) => {
+        if (value === "*") return true;
+        return actual[key] === value;
+      });
+    });
+  }
+
+  // src/timeline.js
+  function sampleLayer(layer, renderEvent, elapsedMs) {
+    const keyframes = [...layer.keyframes].sort((a, b) => a.t - b.t);
+    const first = keyframes[0];
+    const last = keyframes[keyframes.length - 1];
+    if (!first || elapsedMs < first.t || elapsedMs > last.t) return null;
+    const nextIndex = keyframes.findIndex((keyframe) => keyframe.t >= elapsedMs);
+    const next = keyframes[nextIndex];
+    const previous = keyframes[Math.max(0, nextIndex - 1)];
+    const progress = next.t === previous.t ? 0 : (elapsedMs - previous.t) / (next.t - previous.t);
+    const from = resolveKeyframe(previous, renderEvent);
+    const to = resolveKeyframe(next, renderEvent);
     return {
-      x: boardRect.left + file2 * size + size / 2,
-      y: boardRect.top + rank2 * size + size / 2,
-      size
+      sheet: layer.sheet,
+      frame: layer.frame,
+      x: lerp(from.x, to.x, progress),
+      y: lerp(from.y, to.y, progress),
+      scale: lerp(from.scale, to.scale, progress),
+      alpha: lerp(from.alpha, to.alpha, progress),
+      rotation: lerp(from.rotation, to.rotation, progress)
     };
   }
-  function squareCenterFromDocument(document2, square) {
-    const board = document2.querySelector("cg-board");
-    if (!board) return null;
-    const wrap = document2.querySelector(".cg-wrap");
-    const isBlackOrientation = wrap?.classList.contains("orientation-black") ?? false;
-    return squareCenter(square, board.getBoundingClientRect(), isBlackOrientation);
+  function resolveKeyframe(keyframe, renderEvent) {
+    const ref = resolveRef(keyframe.ref, renderEvent);
+    const squareSize = renderEvent.board.squareSize;
+    return {
+      x: ref.x + (keyframe.dx ?? 0) * squareSize,
+      y: ref.y + (keyframe.dy ?? 0) * squareSize,
+      scale: keyframe.scale ?? 1,
+      alpha: keyframe.alpha ?? 1,
+      rotation: keyframe.rotation ?? 0
+    };
+  }
+  function resolveRef(ref, renderEvent) {
+    if (ref === "attacker.from") return renderEvent.attacker.from;
+    if (ref === "attacker.to") return renderEvent.attacker.to;
+    if (ref === "victim.at") return renderEvent.victim.at;
+    throw new Error(`Unknown timeline ref: ${ref}`);
+  }
+  function lerp(from, to, progress) {
+    return from + (to - from) * progress;
+  }
+
+  // src/canvas-sprite-renderer.js
+  var DEFAULT_MAX_DURATION_MS = 3e3;
+  var CanvasSpriteRenderer = class {
+    constructor({
+      pack,
+      drawSprite,
+      maxDurationMs = DEFAULT_MAX_DURATION_MS
+    }) {
+      this.pack = pack;
+      this.drawSprite = drawSprite;
+      this.maxDurationMs = maxDurationMs;
+      this.activeAnimations = [];
+    }
+    get activeCount() {
+      return this.activeAnimations.length;
+    }
+    play(renderEvent, nowMs = performance.now()) {
+      const timeline = selectTimeline(this.pack, renderEvent);
+      if (!timeline) return false;
+      this.activeAnimations.push({
+        startedAt: nowMs,
+        durationMs: Math.min(timelineDuration(timeline), this.maxDurationMs),
+        timeline,
+        renderEvent
+      });
+      return true;
+    }
+    tick(nowMs = performance.now()) {
+      const stillActive = [];
+      for (const animation of this.activeAnimations) {
+        const elapsedMs = nowMs - animation.startedAt;
+        if (elapsedMs <= animation.durationMs) {
+          this.draw(animation, elapsedMs);
+          stillActive.push(animation);
+        }
+      }
+      this.activeAnimations = stillActive;
+    }
+    draw(animation, elapsedMs) {
+      for (const layer of animation.timeline.layers) {
+        const sample = sampleLayer(layer, animation.renderEvent, elapsedMs);
+        if (sample) this.drawSprite(sample, animation.renderEvent);
+      }
+    }
+  };
+  function timelineDuration(timeline) {
+    const keyframeEnd = Math.max(
+      0,
+      ...timeline.layers.flatMap((layer) => layer.keyframes.map((keyframe) => keyframe.t))
+    );
+    return Math.min(timeline.maxDurationMs ?? keyframeEnd, keyframeEnd);
   }
 
   // node_modules/chess.js/dist/esm/chess.js
@@ -3540,6 +3695,161 @@
     }
   };
 
+  // src/default-animation-pack.js
+  var defaultAnimationPack = {
+    id: "debug-default-pack",
+    version: 1,
+    spritesheets: {
+      debug: {
+        image: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAMAAAAAgCAYAAABEmHeFAAACBElEQVR4nO2bS2rEMBAF+2A5hNdzppwk65wp1+iQkAbjeMb69Fd+BdqOW1AFHiMR3RzeET2LF/y1sazoWUAwfCB6Hmv28iMA8C+AlSM4yo8AwC93iMBC/o+N+WfpTNgGv7/xq+U5y1KsHIGl/F4RXInvGsL2yXy2TB/qwIoReMhvGUGv+GYhPJN+tRhWisBTfosIZuVXi6BXfq0I+PFgjdX93AUiiJBfMwIt+acjGJVfI4KoAKh4BJHya0SgLf9wBLPyz0YQGQAVjSCD/LMRpAhAS/6ZCKIDoGIRZJJ/NIJRmdUjQAC7OQpEkFH+kQhmBUYABgFQ8ggyy98TgZa807+jLf9oBJkCoKQRVJC/NQIEcNxIsgAoWQSV5G+JQPMLDgIwCoCSRFBR/qsIEMBxE0kDoOAIrE51IoA/EEDjfAERWB9pxisQAuib0TECr/P8t/8TTPgM2jenQwTel1m85ScEcLKRIgGQcQRRN7k85Rdm5dWKCAGMzGsQQfQ1Rk/5KdNRCMJhuLGZFSOIll/wkl9olbl3DQ0TJT8VDYCUIsgiv+AlP2ULgG54IUaDmQiyyS94yC+kkV/wln8FRiLIKr/gIb+QRv4jkL6dngiyyy94yC+kkx/00xJBFfkFD/n3QPzivIqgmvyCl/x7IH5hziKoKj8AQ1wFED0fAOY8CyB6rjvyDXo+HAy4eP9mAAAAAElFTkSuQmCC",
+        frameWidth: 32,
+        frameHeight: 32,
+        frames: 6,
+        drawSize: 72
+      }
+    },
+    rules: [
+      { when: { attacker: { piece: "*" } }, timeline: "default-capture" }
+    ],
+    timelines: {
+      "default-capture": {
+        maxDurationMs: 1e3,
+        layers: [
+          {
+            id: "attacker",
+            sheet: "debug",
+            frame: 0,
+            keyframes: [
+              { t: 0, ref: "attacker.from", scale: 0.8, alpha: 1 },
+              { t: 250, ref: "attacker.to", scale: 1.1, alpha: 0 }
+            ]
+          },
+          {
+            id: "slash",
+            sheet: "debug",
+            frame: 2,
+            keyframes: [
+              { t: 180, ref: "victim.at", rotation: -0.5, scale: 0.6, alpha: 0 },
+              { t: 260, ref: "victim.at", rotation: 0.3, scale: 1.4, alpha: 1 },
+              { t: 420, ref: "victim.at", rotation: 0.8, scale: 1.8, alpha: 0 }
+            ]
+          },
+          {
+            id: "victim-break",
+            sheet: "debug",
+            frame: 4,
+            keyframes: [
+              { t: 260, ref: "victim.at", scale: 0.7, alpha: 0 },
+              { t: 450, ref: "victim.at", scale: 1.2, alpha: 1 },
+              { t: 700, ref: "victim.at", scale: 1.6, alpha: 0 }
+            ]
+          }
+        ]
+      }
+    }
+  };
+
+  // src/render-event.js
+  function createRenderEvent(captureEvent, board, snapshotId) {
+    const orientation = board.isBlackOrientation ? "black" : "white";
+    const squareSize = board.size / 8;
+    const from = boardLocalSquareCenter(captureEvent.from, board.size, board.isBlackOrientation);
+    const to = boardLocalSquareCenter(captureEvent.to, board.size, board.isBlackOrientation);
+    const victimAt = boardLocalSquareCenter(captureEvent.capturedAt, board.size, board.isBlackOrientation);
+    const dx = Math.sign(to.x - from.x);
+    const dy = Math.sign(to.y - from.y);
+    return {
+      id: `${snapshotId}|${captureEvent.ply}|${captureEvent.san}|${captureEvent.from}|${captureEvent.to}`,
+      board: {
+        size: board.size,
+        squareSize,
+        orientation
+      },
+      attacker: {
+        piece: captureEvent.movingPiece,
+        color: captureEvent.movingColor,
+        from: { square: captureEvent.from, ...from },
+        to: { square: captureEvent.to, ...to }
+      },
+      victim: {
+        piece: captureEvent.capturedPiece,
+        color: captureEvent.capturedColor,
+        at: { square: captureEvent.capturedAt, ...victimAt }
+      },
+      move: {
+        san: captureEvent.san,
+        ply: captureEvent.ply,
+        isEnPassant: captureEvent.isEnPassant
+      },
+      direction: {
+        dx,
+        dy,
+        angleRad: Math.atan2(to.y - from.y, to.x - from.x)
+      }
+    };
+  }
+  function boardLocalSquareCenter(square, boardSize, isBlackOrientation = false) {
+    let file2 = square.charCodeAt(0) - 97;
+    let rank2 = 8 - Number.parseInt(square[1], 10);
+    if (isBlackOrientation) {
+      file2 = 7 - file2;
+      rank2 = 7 - rank2;
+    }
+    const squareSize = boardSize / 8;
+    return {
+      x: file2 * squareSize + squareSize / 2,
+      y: rank2 * squareSize + squareSize / 2
+    };
+  }
+
+  // src/spritesheet.js
+  function frameRect(sheet, frame2) {
+    return {
+      sx: frame2 * sheet.frameWidth,
+      sy: 0,
+      sw: sheet.frameWidth,
+      sh: sheet.frameHeight
+    };
+  }
+  function createImageLoader({ Image = globalThis.Image } = {}) {
+    const cache = /* @__PURE__ */ new Map();
+    return function loadImage(src) {
+      if (cache.has(src)) return cache.get(src);
+      const image = new Image();
+      image.src = src;
+      cache.set(src, image);
+      return image;
+    };
+  }
+  function createCanvasSpriteDrawer({ context, pack, loadImage = createImageLoader() }) {
+    Object.values(pack.spritesheets).forEach((sheet) => loadImage(sheet.image));
+    return function drawSprite(sample) {
+      const sheet = pack.spritesheets[sample.sheet];
+      if (!sheet) return;
+      const image = loadImage(sheet.image);
+      if (image.complete === false) return;
+      const rect = frameRect(sheet, sample.frame);
+      const size = sheet.drawSize ?? sheet.frameWidth;
+      context.save();
+      context.globalAlpha = sample.alpha;
+      context.translate(sample.x, sample.y);
+      context.rotate(sample.rotation);
+      context.scale(sample.scale, sample.scale);
+      context.drawImage(
+        image,
+        rect.sx,
+        rect.sy,
+        rect.sw,
+        rect.sh,
+        -size / 2,
+        -size / 2,
+        size,
+        size
+      );
+      context.restore();
+    };
+  }
+
   // src/move-feed.js
   var MOVE_SELECTORS = [
     "move san",
@@ -3609,209 +3919,12 @@
     q: "Dame",
     k: "K\xF6nig"
   };
-  var ANIMATIONS = {
-    cssInjected: false,
-    injectCSS() {
-      if (this.cssInjected) return;
-      const style = document.createElement("style");
-      style.textContent = ".ka{position:fixed;pointer-events:none}@keyframes ka-blast{0%{transform:scale(0);opacity:1;border-width:6px}50%{transform:scale(2.5);opacity:.8}100%{transform:scale(4.5);opacity:0;border-width:1px}}@keyframes ka-vaporize{0%{transform:scale(1);opacity:1;filter:brightness(1)}30%{transform:scale(1.4);opacity:1;filter:brightness(4)}100%{transform:scale(.3);opacity:0;filter:brightness(6)}}@keyframes ka-ram-v{0%{transform:translate(var(--kx),var(--ky)) scale(.8);opacity:0}20%{opacity:1}60%{transform:translate(0,0) scale(1.15);opacity:1}80%{transform:translate(0,0) scale(1);opacity:.8}100%{transform:translate(0,0) scale(.8);opacity:0}}@keyframes ka-ram-a{0%{transform:translate(var(--kx),var(--ky));opacity:0}20%{opacity:.5}50%{transform:translate(0,0) scale(1.25);opacity:.8}70%{transform:translate(0,0) scale(1);opacity:.5}100%{transform:translate(0,0);opacity:0}}@keyframes ka-slash-L{0%{transform:translate(0,0) rotate(0);opacity:1}100%{transform:translate(-60px,-50px) rotate(-35deg);opacity:0}}@keyframes ka-slash-R{0%{transform:translate(0,0) rotate(0);opacity:1}100%{transform:translate(60px,50px) rotate(35deg);opacity:0}}@keyframes ka-stab{0%{transform:translate(0,0) scale(.8)}25%{transform:translate(var(--sx),var(--sy)) scale(1.4)}50%{transform:translate(var(--sx),var(--sy)) scale(1.2)}100%{transform:translate(0,0) scale(1);opacity:0}}@keyframes ka-fall{0%{transform:scale(1) rotate(0);opacity:1}100%{transform:scale(.4) rotate(45deg) translateY(15px);opacity:0}}@keyframes ka-stomp{0%{transform:translateY(-90px) scale(.6)}40%{transform:translateY(5px) scale(1.5)}50%{transform:translateY(0) scale(1)}100%{transform:translateY(0) scale(1);opacity:0}}@keyframes ka-crush{0%{transform:scaleY(1) scaleX(1);opacity:1}100%{transform:scaleY(.03) scaleX(1.8);opacity:0}}@keyframes ka-flash{0%{opacity:.2;transform:scale(.3)}25%{opacity:1;transform:scale(1.3)}100%{opacity:0;transform:scale(1)}}@keyframes ka-bomb{0%{transform:scale(1.1);opacity:1}10%{transform:scale(1.8)}25%{transform:scale(.85) rotate(-10deg)}40%{transform:scale(1.15) rotate(5deg)}55%{transform:scale(1) rotate(0)}75%{opacity:1;transform:scale(1)}100%{opacity:0;transform:scale(1.8)}}";
-      document.head.appendChild(style);
-      this.cssInjected = true;
-    },
-    el(styles, duration) {
-      this.injectCSS();
-      const element = document.createElement("div");
-      element.className = "ka";
-      Object.assign(element.style, styles);
-      document.body.appendChild(element);
-      if (duration) {
-        setTimeout(() => element.remove(), duration);
-      } else {
-        element.addEventListener("animationend", () => element.remove(), { once: true });
-      }
-      return element;
-    },
-    center(square) {
-      const center = squareCenterFromDocument(document, square);
-      if (!center) return null;
-      return {
-        x: center.x,
-        y: center.y,
-        sz: center.size
-      };
-    },
-    q(_event, square) {
-      const c = this.center(square);
-      if (!c) return;
-      const s = c.sz;
-      this.el({
-        left: `${c.x - s / 2}px`,
-        top: `${c.y - s / 2}px`,
-        width: `${s}px`,
-        height: `${s}px`,
-        borderRadius: "50%",
-        border: "5px solid #a855f7",
-        zIndex: "99998",
-        boxShadow: "0 0 40px rgba(168,85,247,.9)",
-        animation: "ka-blast .6s ease-out forwards"
-      });
-      this.el({
-        left: `${c.x - s / 2}px`,
-        top: `${c.y - s / 2}px`,
-        width: `${s}px`,
-        height: `${s}px`,
-        background: "radial-gradient(circle, #fff, #a855f7)",
-        zIndex: "99997",
-        animation: "ka-vaporize .5s ease-out forwards"
-      });
-    },
-    r(event, square) {
-      const c = this.center(square);
-      if (!c) return;
-      const s = c.sz;
-      const d = dirFromMove(event.from, event.to);
-      const kx = -d.x * s * 1.8;
-      const ky = -d.y * s * 1.8;
-      const v = this.el({
-        left: `${c.x - s * 0.4}px`,
-        top: `${c.y - s * 0.4}px`,
-        width: `${s * 0.8}px`,
-        height: `${s * 0.8}px`,
-        background: "rgba(255,50,50,.7)",
-        zIndex: "99997",
-        animation: "ka-ram-v .55s ease-in forwards"
-      });
-      v.style.setProperty("--kx", `${kx}px`);
-      v.style.setProperty("--ky", `${ky}px`);
-      const a = this.el({
-        left: `${c.x - s * 0.4}px`,
-        top: `${c.y - s * 0.4}px`,
-        width: `${s * 0.8}px`,
-        height: `${s * 0.8}px`,
-        background: "rgba(255,255,255,.5)",
-        zIndex: "99998",
-        animation: "ka-ram-a .5s ease-out forwards"
-      });
-      a.style.setProperty("--kx", `${kx}px`);
-      a.style.setProperty("--ky", `${ky}px`);
-    },
-    b(_event, square) {
-      const c = this.center(square);
-      if (!c) return;
-      const s = c.sz;
-      this.el({
-        left: `${c.x - s * 0.35}px`,
-        top: `${c.y - s * 0.35}px`,
-        width: `${s * 0.35}px`,
-        height: `${s * 0.7}px`,
-        background: "rgba(255,255,255,.7)",
-        zIndex: "99997",
-        animation: "ka-slash-L .5s ease-out forwards"
-      });
-      this.el({
-        left: `${c.x}px`,
-        top: `${c.y - s * 0.35}px`,
-        width: `${s * 0.35}px`,
-        height: `${s * 0.7}px`,
-        background: "rgba(255,255,255,.7)",
-        zIndex: "99997",
-        animation: "ka-slash-R .5s ease-out forwards"
-      });
-    },
-    p(_event, square) {
-      const c = this.center(square);
-      if (!c) return;
-      const s = c.sz;
-      const sx = (Math.random() > 0.5 ? 1 : -1) * s * 0.5;
-      const sy = (Math.random() > 0.5 ? 1 : -1) * s * 0.3;
-      const st = this.el({
-        left: `${c.x - s * 0.3}px`,
-        top: `${c.y - s * 0.3}px`,
-        width: `${s * 0.6}px`,
-        height: `${s * 0.6}px`,
-        background: "radial-gradient(circle, #fff, transparent)",
-        zIndex: "99998",
-        animation: "ka-stab .4s ease-out forwards"
-      });
-      st.style.setProperty("--sx", `${sx}px`);
-      st.style.setProperty("--sy", `${sy}px`);
-      this.el({
-        left: `${c.x - s * 0.4}px`,
-        top: `${c.y - s * 0.4}px`,
-        width: `${s * 0.8}px`,
-        height: `${s * 0.8}px`,
-        background: "rgba(255,70,70,.6)",
-        zIndex: "99997",
-        animation: "ka-fall .4s ease-in forwards"
-      });
-    },
-    n(_event, square) {
-      const c = this.center(square);
-      if (!c) return;
-      const s = c.sz;
-      this.el({
-        left: `${c.x - s * 0.45}px`,
-        top: `${c.y - s * 0.8}px`,
-        width: `${s * 0.9}px`,
-        height: `${s * 0.9}px`,
-        borderRadius: "50%",
-        background: "radial-gradient(ellipse, rgba(140,140,255,.7), transparent)",
-        zIndex: "99998",
-        animation: "ka-stomp .6s ease-out forwards"
-      });
-      this.el({
-        left: `${c.x - s * 0.35}px`,
-        top: `${c.y + s * 0.25}px`,
-        width: `${s * 0.7}px`,
-        height: `${s * 0.12}px`,
-        background: "rgba(255,90,90,.7)",
-        zIndex: "99997",
-        animation: "ka-crush .5s ease-in forwards"
-      });
-    },
-    k(_event, square) {
-      const c = this.center(square);
-      if (!c) return;
-      const s = c.sz;
-      this.el({
-        left: `${c.x - s / 2}px`,
-        top: `${c.y - s / 2}px`,
-        width: `${s}px`,
-        height: `${s}px`,
-        background: "white",
-        zIndex: "99999",
-        animation: "ka-flash .45s ease-out forwards"
-      });
-    },
-    "*"(_event, square) {
-      const c = this.center(square);
-      if (!c) return;
-      const s = c.sz;
-      const element = this.el({
-        left: `${c.x - s / 2}px`,
-        top: `${c.y - s / 2}px`,
-        width: `${s}px`,
-        height: `${s}px`,
-        fontSize: `${s * 0.9}px`,
-        lineHeight: `${s}px`,
-        textAlign: "center",
-        zIndex: "99998",
-        animation: "ka-bomb .5s ease-out forwards"
-      });
-      element.textContent = "\u{1F4A3}";
-    }
-  };
-  function dirFromMove(from, to) {
-    const fx = from.charCodeAt(0) - 97;
-    const fy = 8 - Number.parseInt(from[1], 10);
-    const tx = to.charCodeAt(0) - 97;
-    const ty = 8 - Number.parseInt(to[1], 10);
-    const dxRaw = tx - fx;
-    const dyRaw = ty - fy;
-    if (Math.abs(dxRaw) > Math.abs(dyRaw)) return { x: Math.sign(dxRaw), y: 0 };
-    if (Math.abs(dyRaw) > Math.abs(dxRaw)) return { x: 0, y: Math.sign(dyRaw) };
-    return { x: 1, y: 0 };
-  }
+  var stream = new CaptureEventStream();
+  var overlay = new CanvasOverlay();
+  var renderer = null;
+  var frameRequest = null;
+  var currentContext = null;
+  var currentSize = 0;
   function toast(text) {
     const old = document.getElementById("k-toast");
     if (old) old.remove();
@@ -3833,18 +3946,59 @@
     document.body.appendChild(element);
     setTimeout(() => element.remove(), 2e3);
   }
-  function renderCapture(event) {
-    const piece = event.movingPiece;
-    const square = event.capturedAt;
-    const animation = ANIMATIONS[piece] || ANIMATIONS["*"];
-    toast(`${PIECE_NAMES[piece] || "Figur"} schl\xE4gt`);
-    requestAnimationFrame(() => animation.call(ANIMATIONS, event, square));
+  function ensureRenderer() {
+    overlay.attach();
+    const state = overlay.sync();
+    if (!state?.context) return null;
+    currentContext = state.context;
+    currentSize = state.size;
+    if (!renderer) {
+      renderer = new CanvasSpriteRenderer({
+        pack: defaultAnimationPack,
+        drawSprite: createCanvasSpriteDrawer({
+          context: currentContext,
+          pack: defaultAnimationPack
+        })
+      });
+    }
+    return state;
   }
-  var stream = new CaptureEventStream();
+  function renderCapture(event, snapshotId) {
+    const state = ensureRenderer();
+    if (!state || !renderer) return;
+    const renderEvent = createRenderEvent(
+      event,
+      {
+        size: state.size,
+        isBlackOrientation: state.isBlackOrientation
+      },
+      snapshotId
+    );
+    toast(`${PIECE_NAMES[event.movingPiece] || "Figur"} schl\xE4gt`);
+    renderer.play(renderEvent);
+    startFrameLoop();
+  }
+  function startFrameLoop() {
+    if (frameRequest) return;
+    frameRequest = requestAnimationFrame(frame);
+  }
+  function frame(nowMs) {
+    frameRequest = null;
+    const state = overlay.sync();
+    if (state?.context) {
+      currentContext = state.context;
+      currentSize = state.size;
+    }
+    currentContext?.clearRect(0, 0, currentSize, currentSize);
+    renderer?.tick(nowMs);
+    if (renderer?.activeCount) {
+      frameRequest = requestAnimationFrame(frame);
+    }
+  }
   function scan() {
     const snapshot = readSnapshot(document, location);
     const events = stream.next(snapshot);
-    events.forEach(renderCapture);
+    events.forEach((event) => renderCapture(event, snapshot.id));
   }
   var observer = new MutationObserver(scan);
   observer.observe(document.body, {
