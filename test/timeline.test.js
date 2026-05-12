@@ -11,7 +11,8 @@ const renderEvent = {
   },
   victim: {
     at: { x: 300, y: 100 }
-  }
+  },
+  direction: { angleRad: Math.PI / 4 }
 };
 
 test('interpolates keyframe position and visual properties', () => {
@@ -73,6 +74,40 @@ test('samples animated sprite frames over time', () => {
   assert.equal(sampleLayer(layer, renderEvent, 160).frame, 2);
   assert.equal(sampleLayer(layer, renderEvent, 240).frame, 3);
   assert.equal(sampleLayer(layer, renderEvent, 320).frame, 0);
+});
+
+test('counts frames from layer start, not from t=0', () => {
+  const layer = {
+    sheet: 'debug',
+    frames: [0, 1, 2],
+    frameDurations: [50, 50, 50],
+    keyframes: [
+      { t: 400, ref: 'victim.at', scale: 1, alpha: 1 },
+      { t: 600, ref: 'victim.at', scale: 1, alpha: 0 }
+    ]
+  };
+
+  assert.equal(sampleLayer(layer, renderEvent, 400).frame, 0);
+  assert.equal(sampleLayer(layer, renderEvent, 449).frame, 0);
+  assert.equal(sampleLayer(layer, renderEvent, 450).frame, 1);
+  assert.equal(sampleLayer(layer, renderEvent, 500).frame, 2);
+});
+
+test('rotationRef adds attacker angle to base rotation', () => {
+  const sample = sampleLayer(
+    {
+      sheet: 'debug',
+      frame: 0,
+      keyframes: [
+        { t: 0, ref: 'victim.at', rotationRef: 'attacker.angle', rotation: 0.5 },
+        { t: 100, ref: 'victim.at', rotationRef: 'attacker.angle', rotation: 0.5 }
+      ]
+    },
+    renderEvent,
+    0
+  );
+
+  assert.ok(Math.abs(sample.rotation - (Math.PI / 4 + 0.5)) < 0.001);
 });
 
 test('does not sample before the first or after the last keyframe', () => {
