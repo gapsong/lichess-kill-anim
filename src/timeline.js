@@ -29,8 +29,24 @@ export function sampleLayer(layer, renderEvent, elapsedMs) {
 function sampleFrame(layer, elapsedMs) {
   if (!layer.frames) return layer.frame;
 
+  // Count frames from when this layer's first keyframe starts, not from t=0.
+  // Without this, a layer starting at t=400 would show frame 6 instead of frame 0.
+  const layerStart = layer.keyframes?.length
+    ? layer.keyframes.reduce((min, kf) => Math.min(min, kf.t), Infinity)
+    : 0;
+  const localMs = Math.max(0, elapsedMs - layerStart);
+
+  if (layer.frameDurations) {
+    let acc = 0;
+    for (let i = 0; i < layer.frameDurations.length; i++) {
+      acc += layer.frameDurations[i];
+      if (localMs < acc) return layer.frames[i];
+    }
+    return layer.frames[layer.frames.length - 1];
+  }
+
   const frameDurationMs = layer.frameDurationMs ?? 100;
-  const index = Math.floor(elapsedMs / frameDurationMs) % layer.frames.length;
+  const index = Math.floor(localMs / frameDurationMs) % layer.frames.length;
   return layer.frames[index];
 }
 
@@ -43,7 +59,7 @@ function resolveKeyframe(keyframe, renderEvent) {
     y: ref.y + (keyframe.dy ?? 0) * squareSize,
     scale: keyframe.scale ?? 1,
     alpha: keyframe.alpha ?? 1,
-    rotation: keyframe.rotation ?? 0
+    rotation: (keyframe.rotationRef === 'attacker.angle' ? renderEvent.direction.angleRad : 0) + (keyframe.rotation ?? 0)
   };
 }
 
