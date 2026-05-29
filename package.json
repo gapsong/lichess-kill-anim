@@ -5,7 +5,11 @@
   "type": "module",
   "scripts": {
     "build": "node scripts/build-userscript.mjs",
-    "test": "node --test"
+    "test": "node --test",
+    "lab": "npm --prefix lab run dev",
+    "lab:install": "npm --prefix lab install",
+    "lab:promote": "node lab/src/promote.js",
+    "lab:generate": "node lab/scripts/generate.mjs"
   },
   "dependencies": {
     "chess.js": "^1.4.0"
