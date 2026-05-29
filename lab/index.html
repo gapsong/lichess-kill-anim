@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Kill Animation Lab</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0f1115;
+        --panel: #1a1d24;
+        --accent: #b06bff;
+        --text: #e6e6ea;
+        --muted: #8a8e99;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family: ui-sans-serif, system-ui, sans-serif;
+        min-height: 100vh;
+        display: grid;
+        grid-template-rows: auto 1fr;
+      }
+      header {
+        padding: 16px 24px;
+        border-bottom: 1px solid #2a2d35;
+        display: flex;
+        gap: 16px;
+        align-items: center;
+        justify-content: space-between;
+      }
+      h1 { font-size: 18px; margin: 0; font-weight: 600; }
+      .status { color: var(--muted); font-size: 13px; }
+      main {
+        padding: 24px;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        grid-template-rows: 1fr 1fr;
+        gap: 24px;
+        max-width: 1200px;
+        margin: 0 auto;
+        width: 100%;
+      }
+      .cell {
+        background: var(--panel);
+        border: 1px solid #2a2d35;
+        border-radius: 12px;
+        padding: 16px;
+        display: grid;
+        grid-template-rows: auto 1fr auto;
+        gap: 12px;
+        cursor: pointer;
+        transition: border-color 120ms ease, transform 120ms ease;
+      }
+      .cell:hover { border-color: var(--accent); transform: translateY(-2px); }
+      .cell-header { display: flex; justify-content: space-between; align-items: baseline; }
+      .cell-id { font-weight: 600; font-size: 14px; }
+      .cell-parent { color: var(--muted); font-size: 12px; }
+      .cell canvas {
+        width: 100%;
+        height: auto;
+        background: #181a20;
+        border-radius: 8px;
+        display: block;
+      }
+      .cell-hypothesis { color: var(--muted); font-size: 12px; line-height: 1.4; min-height: 2.4em; }
+      .modal {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.6);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        z-index: 10;
+      }
+      .modal.open { display: flex; }
+      .modal-card {
+        background: var(--panel);
+        border: 1px solid #2a2d35;
+        border-radius: 12px;
+        padding: 24px;
+        max-width: 460px;
+        display: grid;
+        gap: 16px;
+      }
+      .modal-card h2 { margin: 0; font-size: 16px; }
+      .modal-card p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
+      .modal-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+      button {
+        background: #2a2d35;
+        color: var(--text);
+        border: 1px solid #3a3d45;
+        border-radius: 8px;
+        padding: 8px 14px;
+        font: inherit;
+        cursor: pointer;
+      }
+      button.primary { background: var(--accent); border-color: var(--accent); color: #0f1115; font-weight: 600; }
+      button:hover { filter: brightness(1.1); }
+      code { font-family: ui-monospace, monospace; font-size: 12px; background: #0f1115; padding: 2px 6px; border-radius: 4px; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Kill Animation Lab &mdash; Queen</h1>
+      <span class="status" id="status">loading...</span>
+    </header>
+    <main id="grid"></main>
+    <div class="modal" id="modal">
+      <div class="modal-card">
+        <h2>Round <span id="round-number">1</span> winner: <span id="winner-id">&mdash;</span></h2>
+        <p id="modal-body"></p>
+        <div class="modal-actions">
+          <button id="btn-refine" type="button">Refine (Claude Code)</button>
+          <button id="btn-from-pool" type="button">From Pool</button>
+          <button id="btn-done" class="primary" type="button">Done</button>
+        </div>
+      </div>
+    </div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
