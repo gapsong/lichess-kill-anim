@@ -20,33 +20,41 @@ export function createTournament({ piece, candidates, now = () => new Date() }) 
     candidates: [...candidates],
     status: STATUS.VOTING,
     winnerOfRound: null,
+    likedOfRound: null,
     history: [],
     startedAt,
     roundStartedAt: startedAt
   };
 }
 
-export function pickWinner(state, winnerId, { now = () => new Date() } = {}) {
+export function pickFavorites(state, likedIds, { now = () => new Date() } = {}) {
   if (state.status !== STATUS.VOTING) {
-    throw new Error(`pickWinner called in non-voting status: ${state.status}`);
+    throw new Error(`pickFavorites called in non-voting status: ${state.status}`);
   }
-  if (!state.candidates.includes(winnerId)) {
-    throw new Error(`unknown candidate: ${winnerId}`);
+  if (!Array.isArray(likedIds) || likedIds.length === 0) {
+    throw new Error('likedIds must be a non-empty array');
+  }
+  for (const id of likedIds) {
+    if (!state.candidates.includes(id)) {
+      throw new Error(`unknown candidate: ${id}`);
+    }
   }
 
-  const losers = state.candidates.filter((id) => id !== winnerId);
+  const likedSet = new Set(likedIds);
+  const disliked = state.candidates.filter((id) => !likedSet.has(id));
   const pickedAt = now().toISOString();
 
   return {
     ...state,
     status: STATUS.BETWEEN,
-    winnerOfRound: winnerId,
+    winnerOfRound: likedIds[0],
+    likedOfRound: [...likedIds],
     history: [
       ...state.history,
       {
         round: state.round,
-        winner: winnerId,
-        losers,
+        liked: [...likedIds],
+        disliked,
         startedAt: state.roundStartedAt,
         pickedAt
       }
@@ -65,11 +73,11 @@ export function nextRound(state, mode, seeds = [], { now = () => new Date() } = 
     throw new Error(`unknown mode: ${mode}`);
   }
 
-  const winner = state.winnerOfRound;
-  if (!winner) throw new Error('no winner recorded for previous round');
+  const liked = state.likedOfRound ?? (state.winnerOfRound ? [state.winnerOfRound] : []);
+  if (liked.length === 0) throw new Error('no liked IDs recorded for previous round');
 
-  const fresh = seeds.filter((id) => id !== winner);
-  const candidates = dedupe([winner, ...fresh]).slice(0, 4);
+  const fresh = seeds.filter((id) => !liked.includes(id));
+  const candidates = dedupe([...liked, ...fresh]).slice(0, 12);
 
   if (candidates.length < 2) {
     throw new Error('need at least 2 candidates for a new round');
@@ -82,6 +90,7 @@ export function nextRound(state, mode, seeds = [], { now = () => new Date() } = 
     candidates,
     status: STATUS.VOTING,
     winnerOfRound: null,
+    likedOfRound: null,
     roundStartedAt
   };
 }
@@ -92,7 +101,7 @@ export function isDone(state) {
 
 export function overallWinner(state) {
   const last = state.history[state.history.length - 1];
-  return last?.winner ?? null;
+  return last?.liked?.[0] ?? last?.winner ?? null;
 }
 
 function dedupe(list) {
