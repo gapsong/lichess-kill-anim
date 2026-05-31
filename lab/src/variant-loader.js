@@ -26,7 +26,7 @@ export async function loadVariants(piece, ids) {
   return Promise.all(ids.map((id) => loadVariant(piece, id)));
 }
 
-export function pickActiveIds(manifest, count = 4) {
+export function pickActiveIds(manifest, count = 12) {
   // Default Phase 1 pool: take the first N from the manifest in order.
   // Skip any id starting with '_' unless we run short.
   const visible = manifest.variants.filter((v) => !v.id.startsWith('_')).map((v) => v.id);
