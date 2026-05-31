@@ -33,15 +33,17 @@
       }
       h1 { font-size: 18px; margin: 0; font-weight: 600; }
       .status { color: var(--muted); font-size: 13px; }
+      .header-right { display: flex; gap: 12px; align-items: center; }
+      .liked-count { color: #ff6b9d; font-size: 13px; font-weight: 600; }
       main {
         padding: 24px;
         display: grid;
-        grid-template-columns: 1fr 1fr;
-        grid-template-rows: 1fr 1fr;
-        gap: 24px;
-        max-width: 1200px;
-        margin: 0 auto;
+        grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+        gap: 20px;
+        align-content: start;
         width: 100%;
+        max-width: 1600px;
+        margin: 0 auto;
       }
       .cell {
         background: var(--panel);
@@ -55,6 +57,24 @@
         transition: border-color 120ms ease, transform 120ms ease;
       }
       .cell:hover { border-color: var(--accent); transform: translateY(-2px); }
+      .cell.liked {
+        border-color: #ff6b9d;
+        box-shadow: 0 0 0 2px rgba(255, 107, 157, 0.25);
+      }
+      .cell-like {
+        background: transparent;
+        border: 1px solid #3a3d45;
+        border-radius: 6px;
+        color: var(--muted);
+        font-size: 12px;
+        padding: 4px 8px;
+        cursor: pointer;
+        transition: color 120ms ease, border-color 120ms ease;
+        align-self: start;
+        justify-self: end;
+      }
+      .cell-like.active { color: #ff6b9d; border-color: #ff6b9d; }
+      .cell-like:hover { filter: brightness(1.2); }
       .cell-header { display: flex; justify-content: space-between; align-items: baseline; }
       .cell-id { font-weight: 600; font-size: 14px; }
       .cell-parent { color: var(--muted); font-size: 12px; }
@@ -105,7 +125,11 @@
   <body>
     <header>
       <h1>Kill Animation Lab &mdash; Queen</h1>
-      <span class="status" id="status">loading...</span>
+      <div class="header-right">
+        <span class="status" id="status">loading...</span>
+        <span class="liked-count" id="liked-count" style="display:none">0 liked</span>
+        <button id="btn-confirm" type="button" class="primary" disabled>Confirm Selection</button>
+      </div>
     </header>
     <main id="grid"></main>
     <div class="modal" id="modal">
