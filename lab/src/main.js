@@ -25,6 +25,7 @@ const btnRefine = document.getElementById('btn-refine');
 const btnFromPool = document.getElementById('btn-from-pool');
 const btnDone = document.getElementById('btn-done');
 const btnConfirm = document.getElementById('btn-confirm');
+const btnFinish = document.getElementById('btn-finish');
 const likedCountEl = document.getElementById('liked-count');
 
 let state = null;
@@ -171,13 +172,35 @@ function closeModal() {
   modalEl.classList.remove('open');
 }
 
-btnConfirm.addEventListener('click', () => {
+btnConfirm.addEventListener('click', async () => {
   if (state.status !== STATUS.VOTING || likedIds.size === 0) return;
-  state = pickFavorites(state, [...likedIds]);
+
+  const likedArr = [...likedIds];
+  state = pickFavorites(state, likedArr);
   save(PIECE, state);
   likedIds.clear();
   updateLikeUI();
-  openModal();
+
+  btnConfirm.disabled = true;
+  statusEl.textContent = `generating next batch from ${likedArr[0]}…`;
+
+  try {
+    const res = await fetch('/api/generate', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ piece: PIECE, championId: likedArr[0], count: 8 })
+    });
+    const result = await res.json();
+    if (!result.ok) throw new Error(result.error);
+
+    manifest = await loadManifest(PIECE);
+    state = nextRound(state, 'refine', result.ids);
+    save(PIECE, state);
+    await renderRound();
+  } catch (err) {
+    statusEl.textContent = `generation failed: ${err.message}`;
+    openModal();
+  }
 });
 
 btnRefine.addEventListener('click', async () => {
@@ -225,6 +248,22 @@ btnFromPool.addEventListener('click', async () => {
   save(PIECE, state);
   closeModal();
   await renderRound();
+});
+
+btnFinish.addEventListener('click', () => {
+  if (state.status === STATUS.VOTING) {
+    if (!confirm('End the tournament now? Current round will not be saved.')) return;
+  }
+  if (state.status !== STATUS.BETWEEN) {
+    // force into BETWEEN so nextRound('done') works
+    state = { ...state, status: STATUS.BETWEEN };
+  }
+  state = nextRound(state, 'done');
+  save(PIECE, state);
+  const filename = exportJson(state);
+  const winner = overallWinner(state);
+  statusEl.textContent = `done — saved ${filename}. winner: ${winner}. promote with: npm run lab:promote queen ${winner}`;
+  clear(PIECE);
 });
 
 btnDone.addEventListener('click', () => {
