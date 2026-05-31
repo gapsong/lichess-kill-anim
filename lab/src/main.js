@@ -4,7 +4,7 @@ import { loadManifest, loadVariants, pickActiveIds, metadataFor } from './varian
 import { createCellRunner, startPlayground } from './playground.js';
 import {
   createTournament,
-  pickWinner,
+  pickFavorites,
   nextRound,
   STATUS,
   overallWinner
@@ -24,10 +24,13 @@ const modalBodyEl = document.getElementById('modal-body');
 const btnRefine = document.getElementById('btn-refine');
 const btnFromPool = document.getElementById('btn-from-pool');
 const btnDone = document.getElementById('btn-done');
+const btnConfirm = document.getElementById('btn-confirm');
+const likedCountEl = document.getElementById('liked-count');
 
 let state = null;
 let manifest = null;
 let stopPlayground = null;
+let likedIds = new Set();
 
 bootstrap().catch((err) => {
   console.error('[lab] bootstrap failed', err);
@@ -42,7 +45,7 @@ async function bootstrap() {
     state = persisted;
     statusEl.textContent = `resumed round ${state.round}`;
   } else {
-    state = createTournament({ piece: PIECE, candidates: pickActiveIds(manifest, 4) });
+    state = createTournament({ piece: PIECE, candidates: pickActiveIds(manifest) });
     save(PIECE, state);
     statusEl.textContent = `round ${state.round}`;
   }
@@ -53,6 +56,8 @@ async function bootstrap() {
 async function renderRound() {
   if (stopPlayground) { stopPlayground(); stopPlayground = null; }
   gridEl.innerHTML = '';
+  likedIds.clear();
+  updateLikeUI();
 
   const variants = await loadVariants(PIECE, state.candidates);
   const event = mockQueenKillEvent({ size: 360 });
@@ -68,12 +73,11 @@ async function renderRound() {
       renderEvent: event
     });
 
-    wrapper.cell.addEventListener('click', () => handlePick(variant.id));
     return runner;
   });
 
   stopPlayground = startPlayground({ cells });
-  statusEl.textContent = `round ${state.round} -- pick one`;
+  statusEl.textContent = `round ${state.round} — like your favourites, then confirm`;
 }
 
 function renderCell(variant, meta) {
@@ -101,36 +105,62 @@ function renderCell(variant, meta) {
   hypothesis.className = 'cell-hypothesis';
   hypothesis.textContent = meta?.hypothesis ?? '';
 
-  cell.append(header, canvas, hypothesis);
+  const likeBtn = document.createElement('button');
+  likeBtn.className = 'cell-like';
+  likeBtn.type = 'button';
+  likeBtn.textContent = '♡ Like';
+  likeBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    handleLike(variant.id);
+  });
+
+  cell.append(header, canvas, hypothesis, likeBtn);
   return { cell, canvas };
 }
 
-function handlePick(variantId) {
+function handleLike(variantId) {
   if (state.status !== STATUS.VOTING) return;
-  state = pickWinner(state, variantId);
-  save(PIECE, state);
-  openModal();
+  if (likedIds.has(variantId)) {
+    likedIds.delete(variantId);
+  } else {
+    likedIds.add(variantId);
+  }
+  updateLikeUI();
+}
+
+function updateLikeUI() {
+  const count = likedIds.size;
+  likedCountEl.textContent = `${count} liked`;
+  likedCountEl.style.display = count > 0 ? 'inline' : 'none';
+  btnConfirm.disabled = count === 0;
+
+  document.querySelectorAll('.cell').forEach((cell) => {
+    const id = cell.dataset.variantId;
+    const btn = cell.querySelector('.cell-like');
+    const isLiked = likedIds.has(id);
+    cell.classList.toggle('liked', isLiked);
+    if (btn) {
+      btn.classList.toggle('active', isLiked);
+      btn.textContent = isLiked ? '♥ Liked' : '♡ Like';
+    }
+  });
 }
 
 function openModal() {
+  const liked = state.likedOfRound ?? [state.winnerOfRound];
+  const likedList = liked.map((id) => `<strong>${id}</strong>`).join(', ');
   roundNumberEl.textContent = String(state.round);
-  winnerIdEl.textContent = state.winnerOfRound ?? '—';
+  winnerIdEl.textContent = liked[0] ?? '—';
   modalBodyEl.innerHTML = `
-    <strong>${state.winnerOfRound}</strong> won round ${state.round}.
-    The other 3 candidates are archived.
+    Round ${state.round} done. Liked: ${likedList}.
     <br><br>
-    <em>Refine</em>: run the Generator in a terminal:
+    <em>Refine</em>: have Claude generate a new batch seeded from your picks:
     <br>
-    <code>npm run lab:generate -- ${PIECE} ${state.winnerOfRound}</code>
+    <code>/lab-generate ${PIECE} ${liked[0]} --count 8</code>
     <br>
-    feed the printed prompt to a Generator agent, save the response, then:
-    <br>
-    <code>npm run lab:generate -- ${PIECE} ${state.winnerOfRound} --apply &lt;response.md&gt;</code>
-    <br>
-    Then click <em>Refine</em> — the lab reloads the manifest and seeds the
-    next round with the fresh variants.
+    Then click <em>Refine</em> — the lab reloads and shows the fresh variants.
     <br><br>
-    <em>From Pool</em>: skip generation, seed from unused manifest variants.
+    <em>From Pool</em>: seed from unused variants already in the manifest.
     <br>
     <em>Done</em>: freeze the tournament and export the result.
   `;
@@ -141,17 +171,29 @@ function closeModal() {
   modalEl.classList.remove('open');
 }
 
+btnConfirm.addEventListener('click', () => {
+  if (state.status !== STATUS.VOTING || likedIds.size === 0) return;
+  state = pickFavorites(state, [...likedIds]);
+  save(PIECE, state);
+  likedIds.clear();
+  updateLikeUI();
+  openModal();
+});
+
 btnRefine.addEventListener('click', async () => {
   manifest = await loadManifest(PIECE);
-  const usedIds = new Set(state.history.flatMap((h) => [h.winner, ...h.losers]));
+  const liked = state.likedOfRound ?? (state.winnerOfRound ? [state.winnerOfRound] : []);
+  const usedIds = new Set(state.history.flatMap((h) => [
+    ...(h.liked ?? [h.winner]),
+    ...(h.disliked ?? h.losers ?? [])
+  ]));
   const fresh = manifest.variants
     .map((v) => v.id)
-    .filter((id) => !usedIds.has(id) && id !== state.winnerOfRound && !id.startsWith('_'))
-    .slice(-3);
+    .filter((id) => !usedIds.has(id) && !liked.includes(id) && !id.startsWith('_'))
+    .slice(-(12 - liked.length));
 
-  if (fresh.length === 0) {
-    statusEl.textContent =
-      `no fresh variants in manifest — run: npm run lab:generate -- ${PIECE} ${state.winnerOfRound}`;
+  if (fresh.length === 0 && liked.length === 0) {
+    statusEl.textContent = `no fresh variants — run: /lab-generate ${PIECE} ${state.winnerOfRound} --count 8`;
     return;
   }
 
@@ -162,7 +204,14 @@ btnRefine.addEventListener('click', async () => {
 });
 
 btnFromPool.addEventListener('click', async () => {
-  const used = new Set([state.winnerOfRound, ...state.history.flatMap((h) => [h.winner, ...h.losers])]);
+  const liked = state.likedOfRound ?? (state.winnerOfRound ? [state.winnerOfRound] : []);
+  const used = new Set([
+    ...liked,
+    ...state.history.flatMap((h) => [
+      ...(h.liked ?? [h.winner]),
+      ...(h.disliked ?? h.losers ?? [])
+    ])
+  ]);
   const unused = manifest.variants
     .map((v) => v.id)
     .filter((id) => !used.has(id));
@@ -172,7 +221,7 @@ btnFromPool.addEventListener('click', async () => {
     return;
   }
 
-  state = nextRound(state, 'pool', unused.slice(0, 3));
+  state = nextRound(state, 'pool', unused.slice(0, 12 - liked.length));
   save(PIECE, state);
   closeModal();
   await renderRound();
