@@ -107,144 +107,6 @@
     }
   };
 
-  // src/animation-pack.js
-  function selectTimeline(pack, renderEvent) {
-    const rule = pack.rules.find((candidate) => matchesWhen(candidate.when, renderEvent));
-    if (!rule) return null;
-    return pack.timelines[rule.timeline] ?? null;
-  }
-  function matchesWhen(when = {}, renderEvent) {
-    return Object.entries(when).every(([section, expected]) => {
-      const actual = renderEvent[section];
-      if (!actual) return false;
-      return Object.entries(expected).every(([key, value]) => {
-        if (value === "*") return true;
-        return actual[key] === value;
-      });
-    });
-  }
-
-  // src/timeline.js
-  function sampleLayer(layer, renderEvent, elapsedMs) {
-    const keyframes = [...layer.keyframes].sort((a, b) => a.t - b.t);
-    const first = keyframes[0];
-    const last = keyframes[keyframes.length - 1];
-    if (!first || elapsedMs < first.t || elapsedMs > last.t) return null;
-    const nextIndex = keyframes.findIndex((keyframe) => keyframe.t >= elapsedMs);
-    const next = keyframes[nextIndex];
-    const previous = keyframes[Math.max(0, nextIndex - 1)];
-    const progress = next.t === previous.t ? 0 : (elapsedMs - previous.t) / (next.t - previous.t);
-    const from = resolveKeyframe(previous, renderEvent);
-    const to = resolveKeyframe(next, renderEvent);
-    return {
-      sheet: layer.sheet,
-      frame: sampleFrame(layer, elapsedMs),
-      x: lerp(from.x, to.x, progress),
-      y: lerp(from.y, to.y, progress),
-      scale: lerp(from.scale, to.scale, progress),
-      alpha: lerp(from.alpha, to.alpha, progress),
-      rotation: lerp(from.rotation, to.rotation, progress)
-    };
-  }
-  function sampleFrame(layer, elapsedMs) {
-    if (!layer.frames) return layer.frame;
-    const layerStart = layer.keyframes?.length ? Math.min(...layer.keyframes.map((kf) => kf.t)) : 0;
-    const localMs = Math.max(0, elapsedMs - layerStart);
-    if (layer.frameDurations) {
-      let acc = 0;
-      for (let i = 0; i < layer.frameDurations.length; i++) {
-        acc += layer.frameDurations[i];
-        if (localMs < acc) return layer.frames[i];
-      }
-      return layer.frames[layer.frames.length - 1];
-    }
-    const frameDurationMs = layer.frameDurationMs ?? 100;
-    const index = Math.floor(localMs / frameDurationMs) % layer.frames.length;
-    return layer.frames[index];
-  }
-  function resolveKeyframe(keyframe, renderEvent) {
-    const ref = resolveRef(keyframe.ref, renderEvent);
-    const squareSize = renderEvent.board.squareSize;
-    return {
-      x: ref.x + (keyframe.dx ?? 0) * squareSize,
-      y: ref.y + (keyframe.dy ?? 0) * squareSize,
-      scale: keyframe.scale ?? 1,
-      alpha: keyframe.alpha ?? 1,
-      rotation: (keyframe.rotationRef === "attacker.angle" ? renderEvent.direction.angleRad : 0) + (keyframe.rotation ?? 0)
-    };
-  }
-  var REFS = {
-    "attacker.from": (e) => e.attacker.from,
-    "attacker.to": (e) => e.attacker.to,
-    "victim.at": (e) => e.victim.at
-  };
-  function resolveRef(ref, renderEvent) {
-    const resolve = REFS[ref];
-    if (!resolve) throw new Error(`Unknown timeline ref: ${ref}`);
-    return resolve(renderEvent);
-  }
-  function lerp(from, to, progress) {
-    return from + (to - from) * progress;
-  }
-
-  // src/canvas-sprite-renderer.js
-  var DEFAULT_MAX_DURATION_MS = 3e3;
-  var CanvasSpriteRenderer = class {
-    constructor({
-      pack,
-      drawSprite,
-      onImpact = null,
-      maxDurationMs = DEFAULT_MAX_DURATION_MS
-    }) {
-      this.pack = pack;
-      this.drawSprite = drawSprite;
-      this.onImpact = onImpact;
-      this.maxDurationMs = maxDurationMs;
-      this.activeAnimations = [];
-    }
-    get activeCount() {
-      return this.activeAnimations.length;
-    }
-    play(renderEvent, nowMs = performance.now()) {
-      const timeline = selectTimeline(this.pack, renderEvent);
-      if (!timeline) return false;
-      this.activeAnimations.push({
-        startedAt: nowMs,
-        durationMs: Math.min(timelineDuration(timeline), this.maxDurationMs),
-        timeline,
-        renderEvent,
-        impactFired: false
-      });
-      return true;
-    }
-    tick(nowMs = performance.now()) {
-      this.activeAnimations = this.activeAnimations.filter((animation) => {
-        const elapsedMs = nowMs - animation.startedAt;
-        if (elapsedMs > animation.durationMs) return false;
-        this.fireImpact(animation, elapsedMs);
-        this.draw(animation, elapsedMs);
-        return true;
-      });
-    }
-    fireImpact(animation, elapsedMs) {
-      if (animation.impactFired) return;
-      const impactAtMs = animation.timeline.impactAtMs;
-      if (impactAtMs == null || elapsedMs < impactAtMs) return;
-      animation.impactFired = true;
-      this.onImpact?.(animation.renderEvent, animation.timeline);
-    }
-    draw(animation, elapsedMs) {
-      for (const layer of animation.timeline.layers) {
-        const sample = sampleLayer(layer, animation.renderEvent, elapsedMs);
-        if (sample) this.drawSprite(sample, animation.renderEvent);
-      }
-    }
-  };
-  function timelineDuration(timeline) {
-    const end = Math.max(0, ...timeline.layers.flatMap((l) => l.keyframes.map((kf) => kf.t)));
-    return Math.min(timeline.maxDurationMs ?? end, end);
-  }
-
   // node_modules/chess.js/dist/esm/chess.js
   function rootNode(comment) {
     return comment !== null ? { comment, variations: [] } : { variations: [] };
@@ -3770,340 +3632,6 @@
     }
   };
 
-  // src/default-animation-pack.js
-  var defaultAnimationPack = {
-    id: "default-pack",
-    version: 1,
-    spritesheets: {
-      explosion: {
-        image: "data:image/png;base64,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",
-        frameWidth: 32,
-        frameHeight: 32,
-        frames: 8,
-        drawSize: 72
-      },
-      dagger: {
-        image: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQAAAAAgCAYAAAD9qabkAAAD+ElEQVR4AexbCXLkIAzE+8fMI2ce6VU7kUMoEMaAueRahUNYF+4exlvzz+ilFdAKLFsBJYBlt14T1woYowSgT4FWYOEKKAEsvPma+toVQPZKAKiCilYgoQJfxuwhSTDTxVIlgC62QYOIVeBNoIPE1tXWA/iSj5heureFbggC2H+uFgVSn31U4GXMBjGNr48xW0zMQFf3BADscz3tPs9pqxWIVWC0T+VYPiX0bKNrAvAB3jfHyazU8nEYLaRl7q39x3LHJ3Zszar6bglAArqkW2Uj+TiMFlI67xRQx/yn2Cqdh9qTK9AtAchh0xshYoHYmpn0PhD55krlHAN1KT9qp20FuiWAja5YaYgD9tiaWvr9/d5P2d+PxOEC3gYpdJBa+ebYteOU7NSKH+8AIJLvlXR2rt0SAIIkDtjQStKCBAB8Q0+U+aI/EBocc1KgmToGUQwktt7uZ7of+na8A4AMnUSl4LsmAOTcGwkcQP8BPeI7heYO3TlRp8NE4FrneW5zwG/fa/ddn6XHHHtpu2ovXIEsAqBDMB1+9+rH315IYKdsj0/9UD3pQFCDBABCCNxyi74rNoDQh7hrUsd3bUhxpsbQ63psN6TX+K7EdZsAAH52YPd5rnTbBQnQOVLOix4HecEtLUDIIhkoBTr4kvxc0ZWwccVPqzW00+cHn91vFc9Vv+662wTgGnpi3AUJPJHoTR+zg+5mWY7bRgbpkUClP7cJ4EVo5JjsPs/Vaslt4xeDkWMAPWm1cofd0UBe6lSC3HOEdi363KTYt+3ZfckGPRrnj4ikdU/qbhMAggTwIeg/Ka1IYHu9NkO7Hcz18zHbRmuCC8ooroLq6royUfmtjEZY/iz8sx/z/bsAI1wh0PO8cOsjqiwCeCTCgJO2JEBb/ycuGgP8IIg/82UGADIk1drM4EutRWw9AxJtbG2Knp6M48dDvnug883XmvPZHZYAkExTEsBRgEBvDjHmOB2YepcNZrsPj3fIAfc9ISmxpawtGbsLendcwhfA7koJu7k2hiYAJN+MBOioD9CzIJZa4gLe9cP6VgBy4xlt7AIT49FyuBvv8ASAxGMkENPDxujC4Oe2l3yYnK7Ek7L2ir0e1+B0YUvrGKcgABQxBPLQPO6ZSQAelpnymi0XnC5seSq/kJ9pCAAJumB3x1ijohXQCvxWYCoCQFoMem4xp1KuAr19xSiX2ZqWpiMAbKOCH1WoI/iaUceyWm1RgSkJoEUh1adWoNcKSHEpAUjVUd1SFcDb+aUSpmSVAKgI+i9cAXznh4RXjK0B6FmQCffRYjy7KAHMvsOZ+eE7PyTTTLe383/J+QIECdjiWzP6nBLA6Duo8WsFhArEVP8BAAD//9ZDQJAAAAAGSURBVAMAGX86RJDGB+YAAAAASUVORK5CYII=",
-        frameWidth: 32,
-        frameHeight: 32,
-        frames: 8,
-        drawSize: 80
-      },
-      crosshair: {
-        image: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAMAAAAAgCAYAAABEmHeFAAAEoUlEQVR4AeyaC3LjIBBEpb1jfEjnkFqeoq5CY8B8hI0TUtsLzPQ0H89g2cm/Zf7ME/jDJzAL4A+/+HPryzILYGbBnz6BogK437dtx7Zt9tR2++G3vjmeJzDqCWQVgJL7dlvXHeu62g3t9sMvvuXM8TyB0U4gWQBKZCV37uLFV3xu3Gt5c7Z5Akv8MwDJywGRzLQ1UKy0ajRsjHvK2lKw/DmeJ5A6geA7gBJWCZwSeOaThjSf8WN+kh6fe8paU4AjLv2JPiewfX1tPvrM0l81WABMq8Sl34oWrbv7wA1Yg1r6MYhDC2K8FvvPNwFOnar20KL5CbGphE/5Rt7bQwHwerYkbGyzaKId86fs/o2f4uEr4cIvgRKfmJ9vA9xsbMwBm+9n/JtAgms/6/f3GoL8Ple2UduHAhhpoe6Offi6tXR9V2gwJ8lNm4MSbo6e5ZBgIVhedFzoYC5ClPT0Q/D9ignxWm1oh1CjeyoAbmh3ma01QjkxaDNHDnckjhLav/Xt+qxPMZbXMtaLLg0/4bBZP7ZWoIkGc9EXsPmQnRYuPvq0VwE9ENPDB2L+kP1UACHCu2zc3O4BY//AW7sGxaNVqzFiHAkGtDb6QOOeLfMAOwc2YO2jj4ctgFEOruUmb4m1+9fNlkoy+cS1GrVj6ZbE18Sk9Ev2VMI9FQCPKKlFXOF7xRxXrNPX0OONb0v1S/kprZTPfUDib1Jck2LV+2wi5SS15ViN+tX0iTwVQJ8p+qm6b0j3f/1mSCvvk7v/0qzrvH5yuazflvt9AXv/mMbnHKZuzcYHOoduEzwTvv/s/xnN99v+RxeA3cwczxMoPYGPLoD1+Cnd9FX8Y/pu35rZdfqPE27SdbndFrD3D7LPOUzdmlc96kU3cOw/6s9wnArAvZu5d9OMqAbKK+ZoWF4wdGPRDkFnwFjKD0hkmUh8kEWuINnHqZzishyrUbGMriGnAug604eKc8vVLr0l1s6pRLIJ5vPkE9f3tfSlW6JRE5PSL9lTCXfYAuA7fL6/B6mDSfmIBWileJ/mI7mA1k0faNyzZR5g58AGrH308akAbi5T3Dt9t8cgtJnjPYdSP6tucj3a0Fo1bAI+xdC/CtxsQHokHNAYH9D4ilZ6zENfsNqy08LFT5/2KqAHYnr4QMwfsp8KIER4p83Vo3vEbVvBFRqsoCShS7hol4IXOYRSnVw+c8ElsQH9EPABfIqhfzXQDqFmnocC4Ibmpq4RS8WgiXaKE/PxGCPEOLKLRyvbVS2JDdDTba8WGz5A/7eBhNOeSPIQ5Pe5so3aPhSAFnplArVocYMDrSu3JQbk8kt4JHkIJRqfyCWxBbt+2Wmtb+RxsAD2m/qbXzLym/a25XPzL05r12yQIpkBxSRITmNaOEC+2fY5ARLdR59Z+qsGC4BplbB7AmOoALHogIrwYAjJLYigMa1ss/VOYHajJxAtACJIXMDNSjJjywFcQGwOf3LmCbzrBJIFoEVxs5LMJPWOwB+A7XZXKbRwgeJnO09g1BPIKgAtnqTesa4PX0/udlcptOLPdp7A6CdQVACjb2aub55A6QnMAig9scn/qBN4ttj/AAAA//8v98QqAAAABklEQVQDAAfPGm6rYTQuAAAAAElFTkSuQmCC",
-        frameWidth: 32,
-        frameHeight: 32,
-        frames: 6,
-        drawSize: 96
-      },
-      slash: {
-        image: "data:image/png;base64,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",
-        frameWidth: 32,
-        frameHeight: 32,
-        frames: 8,
-        drawSize: 84
-      },
-      shockwave: {
-        image: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQAAAAAgCAYAAAD9qabkAAAG3UlEQVR4AeycDYLqKBCE495RD6mHdPvDqbHDAAGSaHziWkL/VRNMd6LOvv+m8Rg70LgD1/P9nkIjzXA/wA6MBnCAN+ETluALPrfeGp9cbIve5/HzFo7h+9iB0QAe+/Axr9erXX0L2PpAVGDivdxOpxLkF8dJ3zvCp9hcftm9r3RjTO/AaADpfTmcVoXPwi4XK0LD2QQg2cTJ+yH3giICxPuCQy4h9oUDlGJKNsXCW/LzNvkq1tvG/LkDzEYDYBc6cI8eHRRVISpoFTmjAm82ATaEJzZBccHQ+OILR8XUSBHcfaznDMaKF2I8R0XIzIVYOGbKIcx2YDSA2XaUBV/zwZPqAyb8sZlu7ZMiVkG3cikOjpbYZ8HcJgqoJTbl6zme3CnPvzof+9dap9mCoy7TZ3qNBlDxvqm4cT25BzJwqhOy90fuAYVLEffE+hg44PK63NwX6OV2CceS823R+yL0OVo4enxfmatnfUeI+bgGcLcvwErYelMpZjhV5MxL8H6KLfmnbBRsKFz7uS1lb9FRBIHL9q02zhdsbcyS3x6cR8y5tKaj2LWOwzcAioHFquhPFyuxAuRHjGKZ9yAUsN3iW8bmq2GIsdjA0ZCcNVOwhFA0FDDzHhALB7Fwws08BXzRy5/51hC3csX8OX3st0Z+RY4163t17OEbgD9xKf6lDZIPJzuxS/45uwoXPppKzi+nJ4ZY7OJi3goVTSqO4wMpG7pSLPYYrf5xfI1cylGy1XDX+LwiR806juJz+AZAIfFTl11Mq/cMX2KIrQ5KOIaruOlVyDadPdGDmfJHkF4cP+risLZpFcnNSLMgh01nz3dcFd+Rc3bQQwg7cPgGwCopJk5e5sL1fL1zEj1wvUvPiC8xzHtQc8V+5L3/rmEpTw3nEse+dtrmvhkG+zF2wK/i0A2AK3hcyNfpUfjTxDVeh3KeKEh7vU/uQSwcTlU9zV25yQNiInQg1iPnuLAJ14Yv6RTTO6Zybfmt/9K6xm340g69zr6qAZzP1zt43XIt09kXvsnueS7YnNt2U5YibMDKncsGNEWKOMd1g18aigkLxnfmLizrq0zdDYBb8PP0+I/5K3at5oRZu5a7PXLH4vPTa1T7jLYVIcz7BIV7MerZHYozjWm0A6V9jFyHuGIHuhrA2a788S34Q7diJZuFhnJcx2Yfh/no4DEjVApGMDM+BB/LfDLOhyX/ih+35zHyEWVLzINMjnLUMazjY8I+70PM2tUAYpIhjx0YO/CZO9DVAG7hz0T9Je02PXR7b4LPmc617JGOm2ntqs4XiB4zuwSSAclu9LHMJ+N05uQUPz6jx0g6VyhjHmRyVIQOly/Zga4GwN7wrbGVvd3Z8j+NXJr/Ug6OVpBzKeZ2O61ay8keuRy/t6VW9Pa0Y59+ESYW+Otj8/hp1KvWFvMNeezA2h3obgAk5qoPmL8Ktxull8lWsmVCutUsw6Ob6BnIZ/SntM8szlFqWPus4Mn6ztzPVXzPLHWkqxpAinBLHber8ZdWdr8R/kUaak+5mHMyXab5nQixcMivZcx9Yx/yJO4ycnpy5riwCdyea773mMq19teTljW/MlfLur7R99ANQG8IhRxfuW5WhCo65vJlxJcY5j2ouVVXbo1LeWo4lzj2tZ/3pZ+xvzLXLPEQoh04fAPgCs4VvuWUwZcYYqPjbRJ15c41E/QgRSq9OFI+sY4rM80r1m8lw02OmI8mFuv2lt+Rc+9j+kT+wzcAf9KqqEobLR9OdGJLviWbrtjw9TQSYoglh7iYt6L0BzEcH8hxlmJTMa3+KY4lXSlHybbEW2t/RY7atbzSL5fr8A2AQmbxFBSgqErABxCjWOY9CIVrtxMtV3HlCTEWGzikrBhZs4qak3XNlZJYOEgLJ9zMU8AXvfyZbw1xK1fMn9PHfj3yUu4ezn8h5vANIN5kiruE2H+trAKmoMESHz4AP8UybwGFGgrWvudoiUv5UlSB63Kq/glyjy/p9uBMHW9Oxz7kbN+s/7gG8I436/TzIDfFLSADyYzIP+7VBUdMDDWBWN8qtxT/s0jOk66Y0waPB5fdDhnXM4cJ4/n2HRgNoOEtUGEzhjDOaWACOsHETZ5qAhRxKyExAI6WWF+gj8Jtif7r6zk891/PodlrB0q8owGUdqdgU7FrLLiuMlHAgGIWREjvAZJlZyQGyNYy+kL1BdzCga+P9ZzYauE5amPktyZWHP/6OBrAh7zDFDNguRQ44KdOwBxgwwcwXwMKFsBBIQnIJciPET84APMevCu2Z62fGDMawIe9axR3CVsfDgUIxEthlyA/YoDkMR5zB0YDOOb7crhVUcxCbnGyM+Z8hv61O7CU7X8AAAD//3s/MPYAAAAGSURBVAMADftva8Wc4DoAAAAASUVORK5CYII=",
-        frameWidth: 32,
-        frameHeight: 32,
-        frames: 8,
-        drawSize: 88
-      },
-      pop: {
-        image: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQAAAAAgCAYAAAD9qabkAAADvElEQVR4AeyZi7qqIBCF8byj+yHzIT38kIpYWiAFufa3J2VgLiyYJdk/oz8hIAQui4AI4LJLr4kLAWNEANoFQuDCCIgALrz4mvq1EWD2IgBQkAiBiyIgArjowmvaQgAERACgIBECF0VABHDRhU+d9njrR2Syn+65IpNe17oRmLITAUxI6HqIAAXe/Q0dsgwe3C06hDFOoY8mEBABNLFM6yQpsljWI8q0KPBHnsebGSf9NIb8Jp2u9SIgAqh3bTaZjaNZjt893cvTl9Y3iq77M/ZEYDrir2UwITGs+9SqBQERQMZKsMG99PMTMMPdC6a9cU/Y3g/1xTfMxUff2SSQ6o/cjLkn6tPVZyUIhGk0SwBT4bFBkXBSpe+Jh/gNbjd53xvyKRnXxRuWp2rXLYUfxj2TBIiJv9D/O/fY4uMdm3hsaVzjeFdrN0cAbCjERE8Xryu/fKsNaWvf2OL3UfviJODjGEPxj2P/8NTxTG8a/fMniUaTbyDt5ghggylFeFeuivOuO/PiSKa/GVf0rvCD4C5Q3HbK7A/i8jSlGBAcQgJcY0HPWGzivvfby4njfVtZtIBAFgHYN1Ij8rWJboqwTAEu87Mv3ewxfGkHd/fQxUnIvggMom5uOQEgm44EBWSDJJjOJpDR3Ei4KY1nQkpNm8TJZxFA7Ow6bUsEm8neGWCjP1fRdabb8+hOAE/eD+zZ1dqXS0C1zquWvLIIwP7+0yGfnUxQfDyNkTmBoG/WnXczb8ZnYTYnkvNiy5MQKIFAFgGUSOjI51yEDwbu9T0YnqiKq9+2ISEn9kfxv8dv5xODOTOO0Xynf/Voz1hsnHHGB35SzDm2I9im+sBWUh6B5ggASPzmtoVHw8ngfx9392U/PMkMPogren9rzGBz2D+eTyNTrxzvU20/aQdGyCdjKtYxAo9GNEkATIQNBhF4KVt4xAuF2Ibit0XvC3+w34TK5sA8X3maMoaxYb6p9/jBX6o9tvhItZddeQSaJYDy0OxHYGNDBMj+yPN6iUlRIbFXdAhj4r6cdo6/HNucnGX7OgIigNexqmIkRYVQ7KGgQ6pIspIkpvcQlaRTZRoigCqX5Tgpij2UY4u8ERQTcuQFUjoa86n+T57OPjWn1DjP7EQAz5CRfoUAxYRQ4Miq0zbQIZCSbeq/EQREAI0sVC1pUuBInA86JNarXTcCIoC610fZCYGiCIgAisIr50Lg+wjsZSAC2ENHfULgxxEQAfz4Amt6QmAPARHAHjrqEwI/joAI4McXWNO7NgJHs/8PAAD//9ZXOWMAAAAGSURBVAMAMYhRUNkYg3MAAAAASUVORK5CYII=",
-        frameWidth: 32,
-        frameHeight: 32,
-        frames: 8,
-        drawSize: 72
-      },
-      flash: {
-        image: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAAAgCAYAAADtwH1UAAABRklEQVR4AeyYgQrDIAxEt/7/P29kMJCQmEbOVNsTHFWTnN5bt9LjNdg+qg2WeXzaMIA7Oae+S78h+ny/oupDNJYBoPY2fSiHX6EvA2AFM67YAwFc4XqjSQCNGVdcugCiH2G92Wy8ztfjN7jp+u3YkmrXEdeehgsAIcoasQMEEHs0NYIAptobF38mgNiXsggCKLPaFiIA25ey2S0BeI+8Za4BhY6qw1TpAL0pKbXlHVDiTJEIARQZ7ckQgOdM0fxhvaOQObS+1LQ6Wme3elveARZImdvNfNnvlgBk43fphQDuYhn2HASA9TNdjQDSlmETCADrZ7oaAaQtwya4AOSxrtf1Nnqxsqbjo7H37mh0vqdn1ezFj6x5Gi6AERHm5B0ggLxn0AwCgNqZL7YMAPmfqOx5q+ZkLANgzvHOVbXAn8uMo/4RnsYXAAD//8G/AJkAAAAGSURBVAMAGyOoQBtzNDgAAAAASUVORK5CYII=",
-        frameWidth: 32,
-        frameHeight: 32,
-        frames: 3,
-        drawSize: 96
-      }
-    },
-    rules: [
-      { when: { attacker: { piece: "q" } }, timeline: "queen-shockwave" },
-      { when: { attacker: { piece: "r" } }, timeline: "rook-impact" },
-      { when: { attacker: { piece: "n" } }, timeline: "dagger-kill" },
-      { when: { attacker: { piece: "b" } }, timeline: "slash-kill" },
-      { when: { attacker: { piece: "p" } }, timeline: "pawn-pop" },
-      { when: { attacker: { piece: "*" } }, timeline: "kill-impact" }
-    ],
-    timelines: {
-      "kill-impact": {
-        maxDurationMs: 2e3,
-        impactAtMs: 680,
-        layers: [
-          {
-            id: "crosshair",
-            sheet: "crosshair",
-            frames: [0, 1, 2, 3, 4, 5],
-            frameDurations: [120, 120, 150, 180, 120, 80],
-            keyframes: [
-              { t: 0, ref: "victim.at", scale: 1.8, alpha: 0 },
-              { t: 60, ref: "victim.at", scale: 1.5, alpha: 0.9 },
-              { t: 550, ref: "victim.at", scale: 0.9, alpha: 1 },
-              { t: 720, ref: "victim.at", scale: 0.7, alpha: 0.7 },
-              { t: 900, ref: "victim.at", scale: 0.4, alpha: 0 }
-            ]
-          },
-          {
-            id: "flash",
-            sheet: "flash",
-            frames: [0, 1, 2],
-            frameDurations: [50, 45, 60],
-            keyframes: [
-              { t: 650, ref: "victim.at", scale: 0.9, alpha: 0 },
-              { t: 680, ref: "victim.at", scale: 1, alpha: 1 },
-              { t: 700, ref: "victim.at", scale: 1.05, alpha: 1 },
-              { t: 800, ref: "victim.at", scale: 1.1, alpha: 0 }
-            ]
-          },
-          {
-            id: "impact",
-            sheet: "explosion",
-            frames: [0, 1, 2, 3, 4, 5, 6, 7],
-            frameDurations: [60, 80, 120, 160, 200, 240, 280, 360],
-            keyframes: [
-              { t: 680, ref: "victim.at", scale: 0.3, alpha: 0 },
-              { t: 750, ref: "victim.at", scale: 1.6, alpha: 1 },
-              { t: 850, ref: "victim.at", scale: 1.2, alpha: 1 },
-              { t: 1300, ref: "victim.at", scale: 2.4, alpha: 1 },
-              { t: 2e3, ref: "victim.at", scale: 3.2, alpha: 0 }
-            ]
-          }
-        ]
-      },
-      "dagger-kill": {
-        maxDurationMs: 2025,
-        impactAtMs: 680,
-        layers: [
-          {
-            id: "crosshair",
-            sheet: "crosshair",
-            frames: [0, 1, 2, 3, 4, 5],
-            frameDurations: [120, 120, 150, 180, 120, 80],
-            keyframes: [
-              { t: 0, ref: "victim.at", scale: 1.8, alpha: 0 },
-              { t: 60, ref: "victim.at", scale: 1.5, alpha: 0.9 },
-              { t: 550, ref: "victim.at", scale: 0.9, alpha: 1 },
-              { t: 720, ref: "victim.at", scale: 0.7, alpha: 0.7 },
-              { t: 900, ref: "victim.at", scale: 0.4, alpha: 0 }
-            ]
-          },
-          {
-            id: "flash",
-            sheet: "flash",
-            frames: [0, 1, 2],
-            frameDurations: [50, 45, 60],
-            keyframes: [
-              { t: 650, ref: "victim.at", scale: 0.9, alpha: 0 },
-              { t: 680, ref: "victim.at", scale: 1, alpha: 1 },
-              { t: 700, ref: "victim.at", scale: 1.05, alpha: 1 },
-              { t: 800, ref: "victim.at", scale: 1.1, alpha: 0 }
-            ]
-          },
-          {
-            id: "slash",
-            sheet: "dagger",
-            frames: [0, 1, 2, 3, 4, 5, 6, 7],
-            frameDurations: [60, 80, 60, 160, 220, 220, 280, 360],
-            keyframes: [
-              { t: 680, ref: "victim.at", scale: 0.8, alpha: 0 },
-              { t: 740, ref: "victim.at", scale: 1, alpha: 0.4 },
-              { t: 880, ref: "victim.at", scale: 1.3, alpha: 1 },
-              { t: 980, ref: "victim.at", scale: 1.2, alpha: 0.95 },
-              { t: 1400, ref: "victim.at", scale: 1.6, alpha: 0.7 },
-              { t: 2025, ref: "victim.at", scale: 2, alpha: 0 }
-            ]
-          }
-        ]
-      },
-      "slash-kill": {
-        maxDurationMs: 2020,
-        impactAtMs: 680,
-        layers: [
-          {
-            id: "crosshair",
-            sheet: "crosshair",
-            frames: [0, 1, 2, 3, 4, 5],
-            frameDurations: [120, 120, 150, 180, 120, 80],
-            keyframes: [
-              { t: 0, ref: "victim.at", scale: 1.8, alpha: 0 },
-              { t: 60, ref: "victim.at", scale: 1.5, alpha: 0.9 },
-              { t: 550, ref: "victim.at", scale: 0.9, alpha: 1 },
-              { t: 720, ref: "victim.at", scale: 0.7, alpha: 0.7 },
-              { t: 900, ref: "victim.at", scale: 0.4, alpha: 0 }
-            ]
-          },
-          {
-            id: "flash",
-            sheet: "flash",
-            frames: [0, 1, 2],
-            frameDurations: [50, 45, 60],
-            keyframes: [
-              { t: 650, ref: "victim.at", scale: 0.9, alpha: 0 },
-              { t: 680, ref: "victim.at", scale: 1, alpha: 1 },
-              { t: 700, ref: "victim.at", scale: 1.05, alpha: 1 },
-              { t: 800, ref: "victim.at", scale: 1.1, alpha: 0 }
-            ]
-          },
-          {
-            id: "slash",
-            sheet: "slash",
-            frames: [0, 1, 2, 3, 4, 5, 6, 7],
-            frameDurations: [40, 55, 30, 65, 85, 95, 110, 130],
-            keyframes: [
-              { t: 680, ref: "victim.at", scale: 0.9, alpha: 0, rotationRef: "attacker.angle" },
-              { t: 730, ref: "victim.at", scale: 1.1, alpha: 0.5, rotationRef: "attacker.angle" },
-              { t: 870, ref: "victim.at", scale: 1.4, alpha: 1 },
-              { t: 980, ref: "victim.at", scale: 1.3, alpha: 0.95 },
-              { t: 1400, ref: "victim.at", scale: 1.7, alpha: 0.7 },
-              { t: 2020, ref: "victim.at", scale: 2.1, alpha: 0 }
-            ]
-          }
-        ]
-      },
-      "queen-shockwave": {
-        maxDurationMs: 2200,
-        impactAtMs: 680,
-        layers: [
-          {
-            id: "crosshair",
-            sheet: "crosshair",
-            frames: [0, 1, 2, 3, 4, 5],
-            frameDurations: [120, 120, 150, 180, 120, 80],
-            keyframes: [
-              { t: 0, ref: "victim.at", scale: 1.8, alpha: 0 },
-              { t: 60, ref: "victim.at", scale: 1.5, alpha: 0.9 },
-              { t: 550, ref: "victim.at", scale: 0.9, alpha: 1 },
-              { t: 720, ref: "victim.at", scale: 0.7, alpha: 0.7 },
-              { t: 900, ref: "victim.at", scale: 0.4, alpha: 0 }
-            ]
-          },
-          {
-            id: "flash",
-            sheet: "flash",
-            frames: [0, 1, 2],
-            frameDurations: [50, 45, 60],
-            keyframes: [
-              { t: 650, ref: "victim.at", scale: 0.9, alpha: 0 },
-              { t: 680, ref: "victim.at", scale: 1, alpha: 1 },
-              { t: 700, ref: "victim.at", scale: 1.05, alpha: 1 },
-              { t: 800, ref: "victim.at", scale: 1.1, alpha: 0 }
-            ]
-          },
-          {
-            id: "shockwave",
-            sheet: "shockwave",
-            frames: [0, 1, 2, 3, 4, 5, 6, 7],
-            frameDurations: [50, 60, 35, 55, 75, 90, 110, 130],
-            keyframes: [
-              { t: 680, ref: "victim.at", scale: 0.8, alpha: 0 },
-              { t: 740, ref: "victim.at", scale: 1.1, alpha: 0.7 },
-              { t: 860, ref: "victim.at", scale: 1.4, alpha: 1 },
-              { t: 1e3, ref: "victim.at", scale: 1.5, alpha: 1 },
-              { t: 1600, ref: "victim.at", scale: 2, alpha: 0.6 },
-              { t: 2200, ref: "victim.at", scale: 2.8, alpha: 0 }
-            ]
-          }
-        ]
-      },
-      "rook-impact": {
-        maxDurationMs: 2200,
-        impactAtMs: 680,
-        layers: [
-          {
-            id: "crosshair",
-            sheet: "crosshair",
-            frames: [0, 1, 2, 3, 4, 5],
-            frameDurations: [120, 120, 150, 180, 120, 80],
-            keyframes: [
-              { t: 0, ref: "victim.at", scale: 1.8, alpha: 0 },
-              { t: 60, ref: "victim.at", scale: 1.5, alpha: 0.9 },
-              { t: 550, ref: "victim.at", scale: 0.9, alpha: 1 },
-              { t: 720, ref: "victim.at", scale: 0.7, alpha: 0.7 },
-              { t: 900, ref: "victim.at", scale: 0.4, alpha: 0 }
-            ]
-          },
-          {
-            id: "flash",
-            sheet: "flash",
-            frames: [0, 1, 2],
-            frameDurations: [50, 45, 60],
-            keyframes: [
-              { t: 650, ref: "victim.at", scale: 0.9, alpha: 0 },
-              { t: 680, ref: "victim.at", scale: 1, alpha: 1 },
-              { t: 700, ref: "victim.at", scale: 1.05, alpha: 1 },
-              { t: 800, ref: "victim.at", scale: 1.1, alpha: 0 }
-            ]
-          },
-          {
-            id: "impact",
-            sheet: "explosion",
-            frames: [0, 1, 2, 3, 4, 5, 6, 7],
-            frameDurations: [50, 60, 80, 120, 160, 200, 240, 300],
-            keyframes: [
-              { t: 680, ref: "victim.at", scale: 0.4, alpha: 0 },
-              { t: 750, ref: "victim.at", scale: 2, alpha: 1 },
-              { t: 900, ref: "victim.at", scale: 1.6, alpha: 1 },
-              { t: 1400, ref: "victim.at", scale: 2.8, alpha: 1 },
-              { t: 2200, ref: "victim.at", scale: 3.8, alpha: 0 }
-            ]
-          }
-        ]
-      },
-      "pawn-pop": {
-        maxDurationMs: 1600,
-        impactAtMs: 680,
-        layers: [
-          {
-            id: "crosshair",
-            sheet: "crosshair",
-            frames: [0, 1, 2, 3, 4, 5],
-            frameDurations: [120, 120, 150, 180, 120, 80],
-            keyframes: [
-              { t: 0, ref: "victim.at", scale: 1.8, alpha: 0 },
-              { t: 60, ref: "victim.at", scale: 1.5, alpha: 0.9 },
-              { t: 550, ref: "victim.at", scale: 0.9, alpha: 1 },
-              { t: 720, ref: "victim.at", scale: 0.7, alpha: 0.7 },
-              { t: 900, ref: "victim.at", scale: 0.4, alpha: 0 }
-            ]
-          },
-          {
-            id: "flash",
-            sheet: "flash",
-            frames: [0, 1, 2],
-            frameDurations: [50, 45, 60],
-            keyframes: [
-              { t: 650, ref: "victim.at", scale: 0.9, alpha: 0 },
-              { t: 680, ref: "victim.at", scale: 1, alpha: 1 },
-              { t: 700, ref: "victim.at", scale: 1.05, alpha: 1 },
-              { t: 800, ref: "victim.at", scale: 1.1, alpha: 0 }
-            ]
-          },
-          {
-            id: "pop",
-            sheet: "pop",
-            frames: [0, 1, 2, 3, 4, 5, 6, 7],
-            frameDurations: [30, 40, 25, 50, 65, 75, 90, 110],
-            keyframes: [
-              { t: 680, ref: "victim.at", scale: 0.6, alpha: 0 },
-              { t: 730, ref: "victim.at", scale: 0.9, alpha: 0.8 },
-              { t: 850, ref: "victim.at", scale: 1.1, alpha: 1 },
-              { t: 1e3, ref: "victim.at", scale: 1.2, alpha: 0.9 },
-              { t: 1600, ref: "victim.at", scale: 1.6, alpha: 0 }
-            ]
-          }
-        ]
-      }
-    }
-  };
-
   // src/board-geometry.js
   function boardLocalSquareCenter(square, boardSize, isBlackOrientation = false) {
     let file2 = square.charCodeAt(0) - 97;
@@ -4164,43 +3692,654 @@
     return { x, y };
   }
 
-  // src/spritesheet.js
-  function frameRect(sheet, frame2) {
-    return {
-      sx: frame2 * sheet.frameWidth,
-      sy: 0,
-      sw: sheet.frameWidth,
-      sh: sheet.frameHeight
-    };
+  // src/particle-fx-renderer.js
+  var GLYPH = { k: "\u265A", q: "\u265B", r: "\u265C", b: "\u265D", n: "\u265E", p: "\u265F" };
+  var VALUE = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 0 };
+  var SIG = { q: "nuke", n: "slash", b: "zap", r: "smash", p: "pixel", k: "ascension" };
+  var GFONT = "'Segoe UI Symbol','Noto Sans Symbols2','Noto Sans Symbols','Apple Symbols','DejaVu Sans',sans-serif";
+  var REF_SQUARE = 80;
+  var ParticleFxRenderer = class {
+    constructor({
+      onImpact = null,
+      mode = "signature",
+      // 'signature' | 'random' | a fixed effect id
+      intensity = 7,
+      // 1..10
+      soundOn = true
+    } = {}) {
+      this.onImpact = onImpact;
+      this.mode = mode;
+      this.intensity = Math.max(1, Math.min(10, intensity));
+      this.soundOn = soundOn;
+      this.particles = [];
+      this._k = 1;
+      this._S = REF_SQUARE;
+      this._ac = null;
+      this._master = null;
+      this.POOL = ["nuke", "slash", "zap", "smash", "pixel", "ascension", "splatter", "inferno", "vortex", "shatter"];
+    }
+    get activeCount() {
+      return this.particles.length;
+    }
+    /* ---------- public entry ---------- */
+    play(renderEvent, nowMs = typeof performance !== "undefined" ? performance.now() : Date.now()) {
+      const at = renderEvent?.victim?.at;
+      const S = renderEvent?.board?.squareSize || REF_SQUARE;
+      if (!at) return false;
+      this._S = S;
+      this._k = S / REF_SQUARE;
+      const id = this.effectFor(renderEvent);
+      const victim = {
+        type: renderEvent.victim.piece || "p",
+        color: renderEvent.victim.color || "b"
+      };
+      this.spawn(id, at.x, at.y, S, victim);
+      const lvl = this.intensity, sh = lvl / 6;
+      const amp = (this.SHAKE[id] || 6) * sh;
+      this.onImpact?.(renderEvent, { amplitude: Math.max(2, amp), durationMs: 320 });
+      if (this.soundOn) this.playSound(id);
+      return true;
+    }
+    tick(nowMs, ctx, size) {
+      if (!ctx) return;
+      const ps = this.particles;
+      for (let i = ps.length - 1; i >= 0; i--) {
+        const p = ps[i];
+        this.updateP(p);
+        if (p.dead) ps.splice(i, 1);
+      }
+      for (let i = 0; i < ps.length; i++) this.drawP(ps[i], ctx);
+    }
+    /* ---------- effect routing ---------- */
+    effectFor(re) {
+      if (this.mode && this.mode !== "signature" && this.mode !== "random" && SIG_HAS(this.mode)) return this.mode;
+      if (this.mode === "random") return this.POOL[Math.random() * this.POOL.length | 0];
+      const victim = re.victim || {};
+      const attacker = re.attacker || {};
+      if (victim.piece === "k") return "ascension";
+      return SIG[attacker.piece] || "splatter";
+    }
+    /* ---------- helpers ---------- */
+    rand(a, b) {
+      return a + Math.random() * (b - a);
+    }
+    pickc(a) {
+      return a[Math.random() * a.length | 0];
+    }
+    SHAKE = { nuke: 14, splatter: 6, slash: 7, zap: 5, smash: 12, pixel: 0, ascension: 0, vortex: 6, inferno: 7, shatter: 5 };
+    addP(cfg) {
+      const k = this._k;
+      const p = Object.assign({
+        x: 0,
+        y: 0,
+        vx: 0,
+        vy: 0,
+        g: 0,
+        drag: 1,
+        life: 0,
+        max: 60,
+        size: 4,
+        shape: "circle",
+        color: "#fff",
+        rot: 0,
+        vrot: 0,
+        kind: "std",
+        alpha: 1,
+        grow: 0,
+        glow: 0,
+        seed: Math.random() * 10,
+        fadeIn: false,
+        S: this._S
+      }, cfg);
+      for (const key of ["vx", "vy", "g", "size", "grow", "glow", "vr", "w"]) {
+        if (typeof p[key] === "number") p[key] *= k;
+      }
+      this.particles.push(p);
+      return p;
+    }
+    glyph(victim, cx, cy, S, mode, max, extra) {
+      const white = victim.color === "w";
+      return this.addP(Object.assign({
+        kind: "glyph",
+        x: cx,
+        y: cy,
+        mode,
+        char: GLYPH[victim.type] || GLYPH.p,
+        color: white ? "#f4f3ee" : "#2b2926",
+        stroke: Math.max(1, S * 0.022),
+        strokeColor: white ? "#403e39" : "#0d0c0a",
+        fontPx: S * 0.78,
+        max: max || 30,
+        S
+      }, extra || {}));
+    }
+    glyphHalf(victim, cx, cy, S, half, dirx, diry, rotDeg, max) {
+      const white = victim.color === "w";
+      return this.addP({
+        kind: "glyphHalf",
+        x: cx,
+        y: cy,
+        half,
+        dirx,
+        diry,
+        rotDeg,
+        char: GLYPH[victim.type] || GLYPH.p,
+        color: white ? "#f4f3ee" : "#2b2926",
+        stroke: Math.max(1, S * 0.022),
+        strokeColor: white ? "#403e39" : "#0d0c0a",
+        fontPx: S * 0.78,
+        max: max || 32,
+        S
+      });
+    }
+    bigText(txt, color, cx, cy, scale, font) {
+      return this.addP({
+        kind: "text",
+        x: cx,
+        y: cy,
+        txt,
+        color,
+        fontPx: (scale || 1) * 40,
+        font: font || "'Bungee','Segoe UI',system-ui,sans-serif",
+        max: 55,
+        vy: -0.4
+      });
+    }
+    flashBlob(cx, cy, color, S, max) {
+      return this.addP({ kind: "flash", x: cx, y: cy, color, r: S * 2.6, max: max || 14 });
+    }
+    /* ================= UPDATE ================= */
+    updateP(p) {
+      p.life++;
+      if (p.life >= p.max) {
+        p.dead = true;
+        return;
+      }
+      if (p.kind === "orbit") {
+        p.ang += p.va;
+        p.rad += p.vr;
+        if (p.rad < 3 * this._k) {
+          p.dead = true;
+          return;
+        }
+        p.x = p.cx + Math.cos(p.ang) * p.rad;
+        p.y = p.cy + Math.sin(p.ang) * p.rad;
+        return;
+      }
+      if (p.kind === "bolt" || p.kind === "flash" || p.kind === "beam" || p.kind === "streak") return;
+      if (p.kind === "glyph" || p.kind === "glyphHalf" || p.kind === "text") {
+        if (p.vy) p.y += p.vy;
+        return;
+      }
+      if (p.kind === "ember") p.vx += Math.sin((p.life + p.seed) * 0.3) * 0.09 * this._k;
+      p.vx *= p.drag;
+      p.vy = (p.vy + p.g) * p.drag;
+      p.x += p.vx;
+      p.y += p.vy;
+      p.rot += p.vrot;
+      if (p.grow) p.size = Math.max(0.2, p.size + p.grow);
+    }
+    /* ================= DRAW ================= */
+    drawP(p, ctx) {
+      const t = p.life / p.max;
+      if (p.kind === "flash") {
+        const a2 = (1 - t) * 0.7;
+        const grd = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.r);
+        grd.addColorStop(0, hexA(p.color, a2));
+        grd.addColorStop(1, hexA(p.color, 0));
+        ctx.fillStyle = grd;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.r, 0, 6.2832);
+        ctx.fill();
+        return;
+      }
+      if (p.kind === "beam") {
+        ctx.save();
+        ctx.globalAlpha = t < 0.2 ? t / 0.2 : 1 - (t - 0.2) / 0.8;
+        const grd = ctx.createLinearGradient(0, p.y - p.h, 0, p.y);
+        grd.addColorStop(0, "rgba(255,216,107,0)");
+        grd.addColorStop(1, "rgba(255,216,107,0.55)");
+        ctx.fillStyle = grd;
+        ctx.fillRect(p.x - p.w / 2, p.y - p.h, p.w, p.h);
+        ctx.restore();
+        return;
+      }
+      if (p.kind === "bolt") {
+        ctx.globalAlpha = Math.max(0, 1 - t);
+        ctx.strokeStyle = p.color;
+        ctx.lineWidth = p.w;
+        ctx.lineCap = "round";
+        ctx.shadowColor = p.color;
+        ctx.shadowBlur = 16;
+        ctx.beginPath();
+        const pts = p.pts;
+        ctx.moveTo(pts[0].x, pts[0].y);
+        for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+        ctx.globalAlpha = 1;
+        return;
+      }
+      if (p.kind === "streak") {
+        const sc = t < 0.3 ? t / 0.3 : 1;
+        const a2 = t < 0.3 ? 1 : 1 - (t - 0.3) / 0.7;
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        ctx.rotate(p.ang);
+        ctx.globalAlpha = a2;
+        const grd = ctx.createLinearGradient(-p.len / 2, 0, p.len / 2, 0);
+        grd.addColorStop(0, "rgba(255,255,255,0)");
+        grd.addColorStop(0.5, "#fff");
+        grd.addColorStop(1, "rgba(255,255,255,0)");
+        ctx.fillStyle = grd;
+        ctx.shadowColor = "#fff";
+        ctx.shadowBlur = 14;
+        ctx.fillRect(-p.len / 2 * sc, -p.th / 2, p.len * sc, p.th);
+        ctx.restore();
+        ctx.shadowBlur = 0;
+        ctx.globalAlpha = 1;
+        return;
+      }
+      if (p.kind === "text") {
+        let sc, a2;
+        if (t < 0.25) {
+          sc = 0.3 + (1.18 - 0.3) * (t / 0.25);
+          a2 = t / 0.25;
+        } else if (t < 0.68) {
+          sc = 1.18 - 0.18 * ((t - 0.25) / 0.43);
+          a2 = 1;
+        } else {
+          sc = 1 - 0.08 * ((t - 0.68) / 0.32);
+          a2 = 1 - (t - 0.68) / 0.32;
+        }
+        ctx.save();
+        ctx.translate(p.x, p.y - p.life * 0.6);
+        ctx.scale(sc, sc);
+        ctx.globalAlpha = Math.max(0, a2);
+        ctx.font = `${p.fontPx * this._k}px ${p.font}`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.shadowColor = p.color;
+        ctx.shadowBlur = 20;
+        ctx.fillStyle = p.color;
+        ctx.fillText(p.txt, 0, 0);
+        ctx.restore();
+        ctx.shadowBlur = 0;
+        ctx.globalAlpha = 1;
+        return;
+      }
+      if (p.kind === "glyph") {
+        this.drawGlyph(p, ctx, t);
+        return;
+      }
+      if (p.kind === "glyphHalf") {
+        this.drawGlyphHalf(p, ctx, t);
+        return;
+      }
+      let a = p.fadeIn && p.life < 4 ? p.life / 4 : 1 - t;
+      a = Math.max(0, a) * (p.alpha ?? 1);
+      ctx.globalAlpha = a;
+      if (p.shape === "spark") {
+        ctx.strokeStyle = p.color;
+        ctx.lineWidth = p.size;
+        ctx.lineCap = "round";
+        const len = Math.min(20 * this._k, Math.hypot(p.vx, p.vy) * 1.7);
+        const ang = Math.atan2(p.vy, p.vx);
+        if (p.glow) {
+          ctx.shadowColor = p.color;
+          ctx.shadowBlur = p.glow;
+        }
+        ctx.beginPath();
+        ctx.moveTo(p.x, p.y);
+        ctx.lineTo(p.x - Math.cos(ang) * len, p.y - Math.sin(ang) * len);
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+        ctx.globalAlpha = 1;
+        return;
+      }
+      if (p.shape === "square") {
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        ctx.rotate(p.rot);
+        if (p.glow) {
+          ctx.shadowColor = p.color;
+          ctx.shadowBlur = p.glow;
+        }
+        ctx.fillStyle = p.color;
+        ctx.fillRect(-p.size / 2, -p.size / 2, p.size, p.size);
+        ctx.restore();
+        ctx.shadowBlur = 0;
+        ctx.globalAlpha = 1;
+        return;
+      }
+      if (p.glow) {
+        ctx.shadowColor = p.color;
+        ctx.shadowBlur = p.glow;
+      }
+      ctx.fillStyle = p.color;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, Math.max(0.4, p.size), 0, 6.2832);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      ctx.globalAlpha = 1;
+    }
+    glyphTransform(mode, t, S) {
+      let sx = 1, sy = 1, dx = 0, dy = 0, rot = 0, a = 1;
+      switch (mode) {
+        case "nuke":
+          sx = sy = 1 + 0.7 * t;
+          a = 1 - t;
+          break;
+        case "splatter":
+          sx = sy = 1 + 0.25 * t;
+          a = 1 - t;
+          break;
+        case "smash": {
+          const e = Math.min(1, t / 0.6);
+          sx = 1 + 0.7 * e;
+          sy = Math.max(0.05, 1 - 0.95 * e);
+          dy = S * 0.4 * e;
+          a = t < 0.6 ? 1 : 1 - (t - 0.6) / 0.4;
+          break;
+        }
+        case "zap":
+          a = Math.floor(t * 6) % 2 === 0 ? 1 : 0.15;
+          sx = sy = 1 - 0.2 * t;
+          dy = -S * 0.2 * t;
+          if (t > 0.85) a = Math.max(0, (1 - t) / 0.15);
+          break;
+        case "ascension":
+          dy = -S * 1.3 * t;
+          sx = sy = 1 + 0.15 * t;
+          a = 1 - t;
+          break;
+        case "vortex":
+          sx = sy = Math.max(0, 1 - t);
+          rot = t * Math.PI * 4;
+          a = 1 - t;
+          break;
+        case "inferno":
+          a = 1 - t;
+          sy = 1 - 0.15 * t;
+          dy = S * 0.1 * t;
+          break;
+        case "shatter":
+          sx = sy = 1 + 0.05 * t;
+          a = 1 - t;
+          break;
+        default:
+          a = 1 - t;
+      }
+      return { sx, sy, dx, dy, rot, a };
+    }
+    drawGlyph(p, ctx, t) {
+      const tf = this.glyphTransform(p.mode, t, p.S);
+      ctx.save();
+      ctx.translate(p.x + tf.dx, p.y + tf.dy);
+      ctx.rotate(tf.rot);
+      ctx.scale(tf.sx, tf.sy);
+      ctx.globalAlpha = Math.max(0, tf.a);
+      ctx.font = `${p.fontPx}px ${GFONT}`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      if (p.mode === "ascension") {
+        ctx.shadowColor = "#ffd86b";
+        ctx.shadowBlur = 12;
+      }
+      ctx.lineWidth = p.stroke;
+      ctx.strokeStyle = p.strokeColor;
+      ctx.strokeText(p.char, 0, 0);
+      ctx.fillStyle = p.color;
+      ctx.fillText(p.char, 0, 0);
+      ctx.restore();
+      ctx.shadowBlur = 0;
+      ctx.globalAlpha = 1;
+    }
+    drawGlyphHalf(p, ctx, t) {
+      const a = 1 - t;
+      const dx = p.dirx * p.S * 0.5 * t;
+      const dy = p.diry * p.S * 0.8 * t;
+      const rot = p.rotDeg * Math.PI / 180 * t;
+      const H = p.fontPx;
+      ctx.save();
+      ctx.translate(p.x + dx, p.y + dy);
+      ctx.rotate(rot);
+      ctx.beginPath();
+      if (p.half === "top") ctx.rect(-H, -H, 2 * H, H);
+      else ctx.rect(-H, 0, 2 * H, H);
+      ctx.clip();
+      ctx.globalAlpha = Math.max(0, a);
+      ctx.font = `${p.fontPx}px ${GFONT}`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.lineWidth = p.stroke;
+      ctx.strokeStyle = p.strokeColor;
+      ctx.strokeText(p.char, 0, 0);
+      ctx.fillStyle = p.color;
+      ctx.fillText(p.char, 0, 0);
+      ctx.restore();
+      ctx.globalAlpha = 1;
+    }
+    bolt(cx, cy, S) {
+      const top = cy - S * 2.2;
+      const segs = 9;
+      const pts = [];
+      for (let i = 0; i <= segs; i++) {
+        const tt = i / segs;
+        pts.push({ x: cx + (i === 0 || i === segs ? 0 : this.rand(-S * 0.3, S * 0.3)), y: top + (cy - top) * tt });
+      }
+      this.addP({ kind: "bolt", pts, color: "#7cc8ff", w: 7, max: 7, x: cx, y: cy });
+      this.addP({ kind: "bolt", pts: pts.map((p) => ({ x: p.x, y: p.y })), color: "#eaf6ff", w: 3, max: 9, x: cx, y: cy });
+    }
+    /* ================= EFFECTS ================= */
+    spawn(id, cx, cy, S, victim) {
+      const lvl = this.intensity, cs = 0.5 + lvl / 13;
+      if (id === "nuke") {
+        this.flashBlob(cx, cy, "#ffd9a0", S, 16);
+        this.glyph(victim, cx, cy, S, "nuke", 18);
+        this.bigText("BOOM", "#ff8a3d", cx, cy, 1);
+        let N = Math.round(46 * cs);
+        for (let i = 0; i < N; i++) {
+          const a = Math.random() * 6.28, sp = this.rand(3, 13);
+          this.addP({ x: cx, y: cy, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, g: 0.06, drag: 0.93, max: this.rand(28, 52), size: this.rand(4, 11), color: this.pickc(["#fff2b0", "#ffb13d", "#ff6a1f", "#e23d12"]), glow: 14, grow: 0.3 });
+        }
+        N = Math.round(13 * cs);
+        for (let i = 0; i < N; i++) {
+          const a = Math.random() * 6.28, sp = this.rand(0.5, 3);
+          this.addP({ x: cx, y: cy, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 1.2, g: -0.02, drag: 0.96, max: this.rand(50, 80), size: this.rand(10, 22), color: "rgba(72,66,60,.5)", grow: 0.7, fadeIn: true });
+        }
+        N = Math.round(20 * cs);
+        for (let i = 0; i < N; i++) {
+          const a = Math.random() * 6.28, sp = this.rand(6, 16);
+          this.addP({ x: cx, y: cy, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, g: 0.1, drag: 0.92, max: this.rand(16, 30), size: this.rand(1.5, 3), color: "#ffe89a", shape: "spark" });
+        }
+      } else if (id === "splatter") {
+        this.glyph(victim, cx, cy, S, "splatter", 14);
+        const N = Math.round(34 * cs);
+        for (let i = 0; i < N; i++) {
+          const a = Math.random() * 6.28, sp = this.rand(2, 11);
+          this.addP({ x: cx, y: cy, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 2, g: 0.45, drag: 0.99, max: this.rand(30, 60), size: this.rand(2, 8), color: this.pickc(["#b81f12", "#8e0f08", "#d6332a", "#6e0a05"]) });
+        }
+      } else if (id === "slash") {
+        this.addP({ kind: "streak", x: cx, y: cy, ang: this.rand(-0.9, -0.5), len: S * 2.5, th: Math.max(3, S * 0.06), max: 18 });
+        this.glyphHalf(victim, cx, cy, S, "top", -1, 1, -32, 32);
+        this.glyphHalf(victim, cx, cy, S, "bottom", 1, 1.4, 30, 32);
+        const N = Math.round(26 * cs);
+        for (let i = 0; i < N; i++) {
+          const a = -0.6 + this.rand(-0.5, 0.5) + (i % 2 ? Math.PI : 0), sp = this.rand(4, 12);
+          this.addP({ x: cx, y: cy, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, g: 0.4, drag: 0.99, max: this.rand(26, 46), size: this.rand(2, 6), color: this.pickc(["#c4231a", "#8e0f08", "#e0392e"]) });
+        }
+      } else if (id === "zap") {
+        this.flashBlob(cx, cy, "#bfe9ff", S, 12);
+        this.bolt(cx, cy, S);
+        this.glyph(victim, cx, cy, S, "zap", 26);
+        const N = Math.round(22 * cs);
+        for (let i = 0; i < N; i++) {
+          const a = Math.random() * 6.28, sp = this.rand(3, 10);
+          this.addP({ x: cx, y: cy, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, g: 0.08, drag: 0.9, max: this.rand(14, 28), size: this.rand(1, 2.5), color: this.pickc(["#bff0ff", "#5ec6ff", "#ffffff"]), shape: "spark", glow: 8 });
+        }
+      } else if (id === "smash") {
+        this.glyph(victim, cx, cy, S, "smash", 22);
+        this.bigText("POW!", "#ffd24a", cx, cy - S * 0.2, 1.25);
+        const N = Math.round(26 * cs);
+        for (let i = 0; i < N; i++) {
+          const dir = i % 2 ? 1 : -1;
+          this.addP({ x: cx + dir * S * 0.1, y: cy + S * 0.2, vx: dir * this.rand(2, 8), vy: this.rand(-3, -0.5), g: 0.25, drag: 0.95, max: this.rand(26, 46), size: this.rand(3, 8), color: this.pickc(["#9b8b73", "#c2b393", "#7a6e5a"]), grow: 0.3 });
+        }
+      } else if (id === "pixel") {
+        const val = VALUE[victim.type];
+        this.glyph(victim, cx, cy, S, "pixel", 10);
+        this.bigText("+" + (val || 1), "#63e88a", cx, cy - S * 0.3, 0.95, "'Bungee',monospace,monospace");
+        const pal = ["#ffffff", "#ffe14d", "#46d17a", "#5ec6ff", "#ff5edb", "#ff6a3d"];
+        const N = Math.round(30 * cs);
+        for (let i = 0; i < N; i++) {
+          const a = Math.random() * 6.28, sp = this.rand(2, 9);
+          this.addP({ x: cx, y: cy, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 2, g: 0.3, drag: 0.97, max: this.rand(22, 40), size: this.rand(4, 9), color: this.pickc(pal), shape: "square", vrot: this.rand(-0.2, 0.2) });
+        }
+      } else if (id === "ascension") {
+        this.flashBlob(cx, cy, "#fff0c0", S, 22);
+        this.addP({ kind: "beam", x: cx, y: cy, w: S * 0.9, h: Math.min(cy, S * 4), color: "#ffd86b", max: 52 });
+        this.glyph(victim, cx, cy, S, "ascension", 52);
+        const N = Math.round(26 * cs);
+        for (let i = 0; i < N; i++) this.addP({ x: cx + this.rand(-S * 0.35, S * 0.35), y: cy + this.rand(-S * 0.1, S * 0.3), vx: this.rand(-0.6, 0.6), vy: this.rand(-3.5, -1), g: -0.02, drag: 0.99, max: this.rand(40, 70), size: this.rand(2, 5), color: this.pickc(["#fff3c0", "#ffd86b", "#ffe9a0", "#ffffff"]), glow: 10 });
+      } else if (id === "vortex") {
+        this.glyph(victim, cx, cy, S, "vortex", 42);
+        const N = Math.round(40 * cs);
+        for (let i = 0; i < N; i++) {
+          const ang = Math.random() * 6.28, rad = this.rand(S * 0.4, S * 1.1);
+          this.addP({ kind: "orbit", cx, cy, ang, rad, va: this.rand(0.18, 0.32), vr: -this.rand(0.8, 2.2), x: cx + Math.cos(ang) * rad, y: cy + Math.sin(ang) * rad, max: 120, size: this.rand(2, 5), color: this.pickc(["#b18bff", "#7b4dff", "#d9c6ff", "#ffffff"]), glow: 10 });
+        }
+      } else if (id === "inferno") {
+        this.flashBlob(cx, cy, "#ff8a3d", S, 14);
+        this.glyph(victim, cx, cy, S, "inferno", 36);
+        let N = Math.round(40 * cs);
+        for (let i = 0; i < N; i++) this.addP({ kind: "ember", x: cx + this.rand(-S * 0.3, S * 0.3), y: cy + this.rand(-S * 0.1, S * 0.3), vx: this.rand(-1.5, 1.5), vy: this.rand(-5, -1.5), g: -0.03, drag: 0.98, max: this.rand(26, 52), size: this.rand(4, 11), color: this.pickc(["#ffe14d", "#ff8a1f", "#ff4d12", "#cf2a0a"]), glow: 14, grow: -0.08 });
+        N = Math.round(10 * cs);
+        for (let i = 0; i < N; i++) this.addP({ x: cx + this.rand(-S * 0.2, S * 0.2), y: cy, vx: this.rand(-0.6, 0.6), vy: this.rand(-2, -0.5), g: -0.01, drag: 0.98, max: this.rand(50, 80), size: this.rand(8, 16), color: "rgba(40,34,30,.5)", grow: 0.6, fadeIn: true });
+      } else if (id === "shatter") {
+        const col = victim.color === "w" ? "#e8e4da" : "#3a3833";
+        this.glyph(victim, cx, cy, S, "shatter", 14);
+        let N = Math.round(16 * cs);
+        for (let i = 0; i < N; i++) {
+          const a = Math.random() * 6.28, sp = this.rand(2, 8);
+          this.addP({ x: cx, y: cy, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 3, g: 0.35, drag: 0.99, max: this.rand(30, 55), size: this.rand(4, 9), color: col, shape: "square", vrot: this.rand(-0.3, 0.3) });
+        }
+        N = Math.round(20 * cs);
+        for (let i = 0; i < N; i++) {
+          const a = Math.random() * 6.28, sp = this.rand(0.5, 3);
+          this.addP({ x: cx, y: cy, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, g: 0.02, drag: 0.97, max: this.rand(40, 70), size: this.rand(1, 2.5), color: "rgba(200,196,186,.7)" });
+        }
+      } else {
+        this.spawn("splatter", cx, cy, S, victim);
+      }
+    }
+    /* ================= SOUND (WebAudio synth) ================= */
+    ensureAudio() {
+      if (this._ac) {
+        if (this._ac.state === "suspended") this._ac.resume();
+        return;
+      }
+      try {
+        const AC = window.AudioContext || window.webkitAudioContext;
+        this._ac = new AC();
+        this._master = this._ac.createGain();
+        this._master.gain.value = 0.5;
+        this._master.connect(this._ac.destination);
+      } catch (e) {
+      }
+    }
+    tone(freq, type, t0, dur, gain, freq2) {
+      const ac = this._ac;
+      if (!ac) return;
+      const o = ac.createOscillator(), g = ac.createGain();
+      o.type = type;
+      const t = ac.currentTime + t0;
+      o.frequency.setValueAtTime(freq, t);
+      if (freq2) o.frequency.exponentialRampToValueAtTime(Math.max(1, freq2), t + dur);
+      g.gain.setValueAtTime(1e-4, t);
+      g.gain.exponentialRampToValueAtTime(gain, t + 8e-3);
+      g.gain.exponentialRampToValueAtTime(1e-4, t + dur);
+      o.connect(g).connect(this._master);
+      o.start(t);
+      o.stop(t + dur + 0.02);
+    }
+    noise(t0, dur, type, freq, gain) {
+      const ac = this._ac;
+      if (!ac) return;
+      const n = Math.max(1, Math.floor(ac.sampleRate * dur));
+      const buf = ac.createBuffer(1, n, ac.sampleRate);
+      const d = buf.getChannelData(0);
+      let last = 0;
+      for (let i = 0; i < n; i++) {
+        const w = Math.random() * 2 - 1;
+        if (type === "brown") {
+          last = (last + 0.02 * w) / 1.02;
+          d[i] = last * 3.5;
+        } else d[i] = w;
+      }
+      const src = ac.createBufferSource();
+      src.buffer = buf;
+      const f = ac.createBiquadFilter();
+      f.type = type === "hp" ? "highpass" : type === "bp" ? "bandpass" : "lowpass";
+      f.frequency.value = freq;
+      const g = ac.createGain();
+      const t = ac.currentTime + t0;
+      g.gain.setValueAtTime(gain, t);
+      g.gain.exponentialRampToValueAtTime(1e-4, t + dur);
+      src.connect(f).connect(g).connect(this._master);
+      src.start(t);
+      src.stop(t + dur);
+    }
+    playSound(id) {
+      this.ensureAudio();
+      if (!this._ac) return;
+      if (id === "nuke") {
+        this.noise(0, 0.5, "low", 900, 0.5);
+        this.tone(90, "sine", 0, 0.45, 0.5, 32);
+      } else if (id === "splatter") {
+        this.noise(0, 0.18, "low", 700, 0.45);
+        this.tone(200, "sine", 0, 0.15, 0.25, 60);
+      } else if (id === "slash") {
+        this.noise(0, 0.14, "bp", 2200, 0.45);
+      } else if (id === "zap") {
+        this.tone(700, "square", 0, 0.22, 0.18, 180);
+        this.noise(0, 0.2, "hp", 1500, 0.15);
+      } else if (id === "smash") {
+        this.tone(140, "sine", 0, 0.28, 0.5, 46);
+        this.noise(0, 0.1, "low", 500, 0.35);
+      } else if (id === "pixel") {
+        this.tone(880, "square", 0, 0.06, 0.2);
+        this.tone(1320, "square", 0.07, 0.07, 0.2);
+      } else if (id === "ascension") {
+        [523, 659, 784, 1046].forEach((f, i) => this.tone(f, "triangle", i * 0.08, 0.55, 0.15));
+      } else if (id === "vortex") {
+        this.tone(420, "sawtooth", 0, 0.6, 0.22, 55);
+        this.noise(0, 0.6, "low", 600, 0.12);
+      } else if (id === "inferno") {
+        this.noise(0, 0.6, "brown", 700, 0.3);
+        this.tone(70, "sine", 0, 0.6, 0.3, 50);
+      } else if (id === "shatter") {
+        for (let i = 0; i < 5; i++) this.tone(this.rand(2200, 4200), "triangle", i * 0.03, 0.08, 0.12);
+      }
+    }
+  };
+  function SIG_HAS(id) {
+    return ["nuke", "slash", "zap", "smash", "pixel", "ascension", "splatter", "inferno", "vortex", "shatter"].includes(id);
   }
-  function createImageLoader({ Image = globalThis.Image } = {}) {
-    const cache = /* @__PURE__ */ new Map();
-    return function loadImage(src) {
-      if (cache.has(src)) return cache.get(src);
-      const image = new Image();
-      image.src = src;
-      cache.set(src, image);
-      return image;
-    };
-  }
-  function createCanvasSpriteDrawer({ context, pack, loadImage = createImageLoader() }) {
-    Object.values(pack.spritesheets).forEach((sheet) => loadImage(sheet.image));
-    return function drawSprite(sample) {
-      const sheet = pack.spritesheets[sample.sheet];
-      if (!sheet) return;
-      const image = loadImage(sheet.image);
-      if (!image.complete) return;
-      const { sx, sy, sw, sh } = frameRect(sheet, sample.frame);
-      const size = sheet.drawSize ?? sheet.frameWidth;
-      context.save();
-      context.imageSmoothingEnabled = false;
-      context.globalAlpha = sample.alpha;
-      context.translate(sample.x, sample.y);
-      context.rotate(sample.rotation);
-      context.scale(sample.scale, sample.scale);
-      context.drawImage(image, sx, sy, sw, sh, -size / 2, -size / 2, size, size);
-      context.restore();
-    };
+  function hexA(hex, a) {
+    if (typeof hex !== "string") return `rgba(255,255,255,${a})`;
+    if (hex[0] !== "#") return hex;
+    let r, g, b;
+    if (hex.length === 4) {
+      r = parseInt(hex[1] + hex[1], 16);
+      g = parseInt(hex[2] + hex[2], 16);
+      b = parseInt(hex[3] + hex[3], 16);
+    } else {
+      r = parseInt(hex.slice(1, 3), 16);
+      g = parseInt(hex.slice(3, 5), 16);
+      b = parseInt(hex.slice(5, 7), 16);
+    }
+    return `rgba(${r},${g},${b},${a})`;
   }
 
   // src/move-feed.js
@@ -4261,6 +4400,9 @@
   }
 
   // src/userscript-entry.js
+  var RENDER_MODE = "signature";
+  var INTENSITY = 7;
+  var SOUND_ON = true;
   var PIECE_NAMES = {
     p: "Bauer",
     n: "Springer",
@@ -4303,15 +4445,16 @@
     currentContext = state.context;
     currentSize = state.size;
     if (!renderer) {
-      renderer = new CanvasSpriteRenderer({
-        pack: defaultAnimationPack,
-        drawSprite: createCanvasSpriteDrawer({
-          context: currentContext,
-          pack: defaultAnimationPack
-        }),
-        onImpact: () => {
+      renderer = new ParticleFxRenderer({
+        mode: RENDER_MODE,
+        intensity: INTENSITY,
+        soundOn: SOUND_ON,
+        onImpact: (renderEvent, opts) => {
           if (overlay.board) {
-            shakeElement(overlay.board, { amplitude: 3, durationMs: 160 });
+            shakeElement(overlay.board, {
+              amplitude: opts?.amplitude ?? 3,
+              durationMs: opts?.durationMs ?? 160
+            });
           }
         }
       });
@@ -4345,7 +4488,7 @@
       currentSize = state.size;
     }
     currentContext?.clearRect(0, 0, currentSize, currentSize);
-    renderer?.tick(nowMs);
+    renderer?.tick(nowMs, currentContext, currentSize);
     if (renderer?.activeCount) {
       frameRequest = requestAnimationFrame(frame);
     }
