@@ -10,6 +10,7 @@ const RENDER_MODE = 'signature'; // 'signature' | 'random' | feste id wie 'nuke'
 const INTENSITY = 7;             // 1..10
 const SOUND_ON = true;           // WebAudio-Synth-SFX
 const BUILDUP_MS = 680;          // Targeting-Buildup vor Impact (0 = sofort)
+const SHAKE_PIECES = ['q'];      // Board-Shake nur bei diesen Angreifer-Figuren (Default: nur Dame)
 
 const PIECE_NAMES = {
   p: 'Bauer',
@@ -69,7 +70,7 @@ function ensureRenderer() {
       soundOn: SOUND_ON,
       buildupMs: BUILDUP_MS,
       onImpact: (renderEvent, opts) => {
-        if (overlay.board) {
+        if (overlay.board && SHAKE_PIECES.includes(renderEvent?.attacker?.piece)) {
           shakeElement(overlay.board, {
             amplitude: opts?.amplitude ?? 3,
             durationMs: opts?.durationMs ?? 160
