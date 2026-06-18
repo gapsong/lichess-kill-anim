@@ -1,0 +1,34 @@
+{
+  "piece": "queen",
+  "recipe": "shockwave",
+  "variants": [
+    {
+      "id": "_baseline",
+      "parent": "scripts/animations/shockwave.mjs",
+      "hypothesis": "Production-Stand: lila Void-Ring, 8 Frames, 605 ms total",
+      "generatedBy": "hand",
+      "generatedAt": "2026-05-28T14:55:00Z"
+    },
+    {
+      "id": "v001",
+      "parent": "_baseline",
+      "hypothesis": "Längere Anticipation (frame0 50→120 ms). Impact wirkt schwerer.",
+      "generatedBy": "hand",
+      "generatedAt": "2026-05-28T14:56:00Z"
+    },
+    {
+      "id": "v002",
+      "parent": "_baseline",
+      "hypothesis": "Wärmere Palette: Magenta/Hot-Pink statt royal-lila. Aggressiver.",
+      "generatedBy": "hand",
+      "generatedAt": "2026-05-28T14:57:00Z"
+    },
+    {
+      "id": "v003",
+      "parent": "_baseline",
+      "hypothesis": "Whip-Snap: kompakter Ring (-10%), Tail-Frames 30% kürzer.",
+      "generatedBy": "hand",
+      "generatedAt": "2026-05-28T14:58:00Z"
+    }
+  ]
+}

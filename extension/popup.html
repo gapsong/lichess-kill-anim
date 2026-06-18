@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+  :root { color-scheme: dark; }
+  body { margin:0; width:240px; font-family:'Segoe UI',system-ui,sans-serif; background:#15131f; color:#ece8f5; }
+  header { padding:14px 16px 8px; font-weight:600; letter-spacing:.02em; }
+  .accent { color:#b98cff; }
+  .row { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px 16px; }
+  .row label { font-size:13px; }
+  input[type="range"] { width:120px; accent-color:#b98cff; }
+  input[type="checkbox"] { width:34px; height:18px; accent-color:#b98cff; }
+  .val { min-width:18px; text-align:right; color:#b98cff; font-variant-numeric:tabular-nums; }
+  footer { padding:8px 16px 14px; font-size:11px; color:#8a83a0; }
+</style>
+</head>
+<body>
+  <header>Lichess Kill <span class="accent">Animations</span></header>
+  <div class="row"><label for="enabled">Enabled</label><input id="enabled" type="checkbox"></div>
+  <div class="row"><label for="sound">Sound</label><input id="sound" type="checkbox"></div>
+  <div class="row">
+    <label for="intensity">Intensity</label>
+    <input id="intensity" type="range" min="1" max="10" step="1">
+    <span class="val" id="intensityVal">7</span>
+  </div>
+  <footer>Effects show on captures at lichess.org</footer>
+  <script src="popup.js"></script>
+</body>
+</html>

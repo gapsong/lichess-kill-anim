@@ -12,25 +12,103 @@ Der lesbare Quellcode liegt in `src/`. Die installierbare Tampermonkey-Datei ist
 
 - `lichess-kill-notifier.user.js`
 
-Diese Datei wird generiert. Nicht direkt darin refactoren, ausser es geht um einen schnellen manuellen Gegencheck. Normale Aenderungen gehen in `src/`, danach:
+Diese Datei wird generiert. Nicht direkt darin refactoren. Normale Aenderungen gehen in `src/`, danach:
 
 ```bash
-npm test
-npm run build
+npm test && npm run build && node --check lichess-kill-notifier.user.js
 ```
 
-Der aktuelle Stand ist ein gebundeltes Ein-Datei-Userscript: `chess.js` wird per `esbuild` in `lichess-kill-notifier.user.js` eingebettet, damit Tampermonkey keine externe Runtime-Abhaengigkeit braucht.
+Der aktuelle Stand ist ein gebundeltes Ein-Datei-Userscript: `chess.js` wird per `esbuild` eingebettet, damit Tampermonkey keine externe Runtime-Abhaengigkeit braucht.
 
-Wichtige Module:
+## Wichtige Module
+
+### Core-Pipeline
 
 - `src/chess-state.js`: erzeugt CaptureEvents aus Start-FEN und SAN-Zugliste via `chess.js`
 - `src/move-feed.js`: liest Lichess-Zuglisten aus dem DOM
 - `src/board-geometry.js`: rechnet Squares in Pixelkoordinaten um
 - `src/event-stream.js`: dedupliziert Events ueber MutationObserver-Scans
-- `src/userscript-entry.js`: Tampermonkey-Einstieg, Toasts und Animationen
-- `scripts/build-userscript.mjs`: baut die installierbare Datei
+- `src/render-event.js`: reichert CaptureEvents mit board-lokalen Canvas-Koordinaten an
+- `src/canvas-overlay.js`: verwaltet ein board-lokales Canvas ueber `cg-board`
+- `src/particle-fx-renderer.js`: Live-Partikel-Engine; zeichnet alle Effekte direkt per Canvas-API (kein Spritesheet); unterstuetzt `buildupMs`-Crosshair vor Impact
+- `src/board-shake.js`: abklingender Screen-Shake auf `cg-board` (Vlambeer-Style), getriggert via `onImpact`
+- `src/userscript-entry.js`: Tampermonkey-Einstieg, Toasts und Canvas-Renderer
 
-Das alte Problem `square.last-move` ist entfernt. Turm-Richtung kommt jetzt aus `event.from -> event.to`.
+### Build-Scripts
+
+- `scripts/build-userscript.mjs`: baut die installierbare Datei via esbuild
+
+## Animation-System
+
+### Partikel-Engine (`ParticleFxRenderer`)
+
+Einstieg in `src/userscript-entry.js` mit diesen Konfigurations-Konstanten:
+
+```js
+const RENDER_MODE = 'signature'; // 'signature' | 'random' | feste id wie 'nuke'
+const INTENSITY   = 7;           // 1..10
+const SOUND_ON    = true;        // WebAudio-Synth-SFX
+const BUILDUP_MS  = 680;         // Targeting-Buildup vor Impact (0 = sofort)
+```
+
+Oeffentliches API von `ParticleFxRenderer`:
+
+```js
+const r = new ParticleFxRenderer({ mode, intensity, soundOn, buildupMs, onImpact });
+r.play(renderEvent, nowMs?);  // Effekt starten (gibt false zurueck wenn kein victim.at)
+r.tick(nowMs, ctx, size);     // Partikel weiterrechnen + zeichnen (board-lokale px)
+r.activeCount;                // > 0 => rAF-Loop weiter laufen lassen
+r.onImpact;                   // Callback(renderEvent, { amplitude, durationMs })
+```
+
+### Figur-zu-Effekt-Routing (SIG)
+
+| Figur des Angreifers | Effekt-ID |
+|----------------------|-----------|
+| Dame (q) | `nuke` |
+| Turm (r) | `smash` |
+| Springer (n) | `slash` |
+| Laeufer (b) | `zap` |
+| Bauer (p) | `pixel` |
+| Koenig (k) als Opfer | `ascension` |
+| Fallback | `splatter` |
+
+Zusaetzliche Effekte im Pool (erreichbar ueber `mode: 'random'` oder fixe id): `inferno`, `vortex`, `shatter`.
+
+Bei `mode: 'signature'` wird der Angreifer via `SIG`-Konstante geroutet; Opfer `k` hat Vorrang und liefert immer `ascension`.
+Bei `buildupMs > 0` (Default 680 ms im Userscript) erscheint zuerst ein Targeting-Reticle auf dem Opfer-Feld; nach Ablauf der Buildup-Zeit wird `fireImpact` aufgerufen und `onImpact` gefeuert (Board-Shake).
+
+### Tester
+
+`scripts/debug/harness.html` — lokales HTML-Testbed fuer `ParticleFxRenderer` ohne Lichess.
+
+### RenderEvent-Struktur
+
+```js
+{
+  id: '...',
+  board: { size, squareSize, orientation },
+  attacker: {
+    piece: 'b',           // Figur des Angreifers (lowercase)
+    color: 'w',
+    from: { square: 'c1', x, y },
+    to:   { square: 'h6', x, y }
+  },
+  victim: {
+    piece: 'p',
+    color: 'b',
+    at: { square: 'h6', x, y }
+  },
+  move: { san, ply, isEnPassant },
+  direction: {
+    dx,          // Math.sign des Zugdelta
+    dy,
+    angleRad     // Math.atan2(to.y - from.y, to.x - from.x)
+  }
+}
+```
+
+`direction.angleRad` enthaelt den Winkel des Zuges in Bogenmas.
 
 ## Lichess-DOM-Wissen
 
@@ -42,19 +120,17 @@ Lichess TV verwendet aktuell andere custom Tags:
 rm6 > l4x > kwdb
 ```
 
-Die sichtbaren SAN-Zuege stehen dort direkt in `kwdb`. Deshalb muss `MoveFeed` diese Selektoren unterstuetzen:
-
-Puzzle-Seiten (`/training`) verwenden wieder eine andere Struktur:
+Puzzle-Seiten (`/training`):
 
 ```txt
 main.puzzle move
 ```
 
-Die sichtbaren SAN-Zuege stehen dort direkt im `move`-Text, oft mit Klasse `hist`.
 Nach geloesten oder angezeigten Puzzle-Zuegen haengt Lichess Feedback-Zeichen direkt an den SAN-Text, zum Beispiel `Bxf7+✓` oder `Nd5#✓`. `MoveFeed` muss diese Marker entfernen, bevor `chess.js` die SAN verarbeitet.
 
-Auf `/training` kann der Pfad gleich bleiben, waehrend ein neues Puzzle geladen wird. `MoveFeed` nutzt deshalb die sichtbare Puzzle-ID, zum Beispiel `#BS3bW`, als Teil von `snapshot.id`, damit `CaptureEventStream` seine Dedupe-Daten pro Puzzle zuruecksetzt.
+Auf `/training` kann der Pfad gleich bleiben, waehrend ein neues Puzzle geladen wird. `MoveFeed` nutzt deshalb die sichtbare Puzzle-ID als Teil von `snapshot.id`, damit `CaptureEventStream` seine Dedupe-Daten pro Puzzle zuruecksetzt.
 
+Unterstuetzte Selektoren:
 - `move san`
 - `.analyse__moves san`
 - `.tview2 move san`
@@ -62,19 +138,19 @@ Auf `/training` kann der Pfad gleich bleiben, waehrend ein neues Puzzle geladen 
 - `rm6 l4x kwdb`
 - `l4x kwdb`
 
-Wichtig: SAN-Zuege duerfen nicht mit `Set` dedupliziert werden. Dieselbe SAN kann in einer Partie mehrfach legal vorkommen, zum Beispiel `Nf3`.
+Wichtig: SAN-Zuege duerfen nicht mit `Set` dedupliziert werden. Dieselbe SAN kann in einer Partie mehrfach legal vorkommen.
 
-Wenn keine Zugliste gefunden wird, soll `readSnapshot()` `null` liefern und das Userscript still bleiben, statt zu crashen.
+Wenn keine Zugliste gefunden wird, soll `readSnapshot()` `null` liefern und das Userscript still bleiben.
 
 ## Architektur
 
-Die aktuelle Architektur ist:
-
-- `MoveFeed`: liest Lichess-Snapshot aus DOM
-- `ChessState`: rekonstruiert Spielzustand aus Start-FEN und SAN-Zuegen
-- `BoardGeometry`: rechnet Squares in Pixelkoordinaten um
-- `CaptureEventStream`: dedupliziert CaptureEvents
-- `userscript-entry`: rendert Toasts und Animationen
+```
+MoveFeed          → liest Lichess-Snapshot aus DOM
+ChessState        → rekonstruiert Spielzustand (chess.js)
+CaptureEventStream → dedupliziert CaptureEvents
+RenderEvent       → mappt CaptureEvent auf Canvas-Koordinaten + direction.angleRad
+ParticleFxRenderer → rendert Live-Partikel-Effekte direkt per Canvas-API
+```
 
 Single Source of Truth fuer Schachlogik ist der eigene Chess-State mit `chess.js`. Der sichtbare Board-DOM ist nur Input fuer Move-Liste und Pixel-Geometrie.
 
@@ -98,50 +174,39 @@ CaptureEvent-Form:
 
 Bei En Passant ist `capturedAt` nicht gleich `to`; Animationen sollen auf `capturedAt` gerendert werden.
 
-## TDD-Plan
-
-Der Refactor soll testgetrieben erfolgen. Siehe:
-
-- `docs/TDD-GAMEPLAN.md`
-
-Wichtige TDD-Regel: keine grosse Horizontal-Umstellung. Ein Verhalten testen, minimal implementieren, dann naechstes Verhalten.
-
-Aktueller Teststand:
+## Tests
 
 - `node:test` als Test Runner
 - `jsdom` fuer DOM-nahe MoveFeed-Tests
-- `chess.js` fuer Schachlogik
-- Regressionstests fuer Lichess TV custom DOM und wiederholte SAN-Zuege
-- Regressionstests fuer Puzzle-Historie, Puzzle-Feedback-Marker und Puzzle-ID-Reset
+- 72 Tests insgesamt
 
-Verifikation vor Abschluss:
+Abgedeckt:
+- Routing aller Figuren zu korrekten Partikel-Effekten (SIG-Tabelle)
+- `buildupMs`-Buildup-Timing: Pending-Queue und `fireAt`-Logik
+- Board-Shake via `onImpact`-Callback
+- Regressionstests fuer Lichess TV, Puzzle-ID-Reset, Feedback-Marker, En Passant
 
-```bash
-npm test
-npm run build
-node --check lichess-kill-notifier.user.js
-```
+## Animation Lab (`lab/`) — eingefroren
 
-## Scope fuer den ersten stabilen Refactor
+`lab/` und `scripts/animations/` sind eingefroren: Sie haben keinen Production-Bezug mehr, da die Partikel-Engine keine Spritesheets benoetigt. Die Verzeichnisse existieren weiterhin auf Disk. Ein Umbau auf Partikel-Varianten ist in einer separaten Spec geplant und nicht Teil des aktuellen Stands.
+
+Pure Logik liegt in `lab/src/tournament.js` und wird via `node --test`
+mit `test/tournament.test.js` abgedeckt.
+
+## Scope
 
 In Scope:
-
-- normale Partien
-- Analyse-Hauptlinie
-- Lichess TV Hauptlinie
+- normale Partien, Analyse-Hauptlinie, Lichess TV Hauptlinie
 - Puzzle-Historie auf `/training`
 - Standard-Schach
-- robuste Capture-Erkennung
-- En Passant als expliziter Edge Case
+- robuste Capture-Erkennung, En Passant
 - deduplizierte Animationen trotz mehrfacher DOM-Mutations
+- figur-spezifische Animationen mit Richtungsrotation
 
 Out of Scope:
-
-- Animation Store
+- Animation Store / Pack-Verwaltung
 - Browser Extension Packaging
-- Studienvarianten
-- Puzzle-Varianten jenseits der Haupt-Historie
-- Chess960
+- Studienvarianten, Puzzle-Varianten, Chess960
 - eigene Schachregel-Implementierung
 
 ## Entwicklungsprinzipien
@@ -152,13 +217,12 @@ Out of Scope:
 - Board-Geometrie darf Lichess-DOM kennen, aber keine Schachlogik.
 - Tests sollen Verhalten ueber oeffentliche Interfaces beschreiben.
 - `lichess-kill-notifier.user.js` nach Aenderungen in `src/` immer neu bauen.
-- Bei Lichess-DOM-Aenderungen zuerst mit Playwright oder einem DOM-Fixture reproduzieren, dann Regressionstest ergaenzen.
 
 ## Debug-Hilfen
 
-Temporare Browser-Inspektoren liegen unter:
+Temporare Browser-Inspektoren:
 
 - `scripts/debug/inspect-lichess-tv.mjs`
 - `scripts/debug/check-userscript-tv.mjs`
 
-Diese Scripts brauchen einen echten Browser und koennen ausserhalb der Sandbox laufen muessen. Sie sind Diagnosewerkzeuge, nicht Teil des normalen Builds.
+Diese Scripts brauchen einen echten Browser. Sie sind Diagnosewerkzeuge, nicht Teil des normalen Builds.
