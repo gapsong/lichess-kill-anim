@@ -84,3 +84,40 @@ test('supports parallel animations', () => {
   assert.equal(renderer.activeCount, 2);
   assert.equal(drawCalls.length, 2);
 });
+
+test('fires onImpact once when elapsed time crosses impactAtMs', () => {
+  const impacts = [];
+  const renderer = new CanvasSpriteRenderer({
+    pack: {
+      rules: [{ when: { attacker: { piece: '*' } }, timeline: 'default' }],
+      timelines: {
+        default: {
+          impactAtMs: 100,
+          layers: [
+            {
+              sheet: 'debug',
+              frame: 0,
+              keyframes: [
+                { t: 0, ref: 'victim.at', alpha: 1 },
+                { t: 300, ref: 'victim.at', alpha: 0 }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    drawSprite: () => {},
+    onImpact: (event, timeline) => impacts.push(timeline.impactAtMs)
+  });
+
+  renderer.play(renderEvent, 1000);
+
+  renderer.tick(1050);
+  assert.equal(impacts.length, 0);
+
+  renderer.tick(1150);
+  assert.equal(impacts.length, 1);
+
+  renderer.tick(1200);
+  assert.equal(impacts.length, 1);
+});

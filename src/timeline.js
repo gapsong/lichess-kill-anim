@@ -31,9 +31,7 @@ function sampleFrame(layer, elapsedMs) {
 
   // Count frames from when this layer's first keyframe starts, not from t=0.
   // Without this, a layer starting at t=400 would show frame 6 instead of frame 0.
-  const layerStart = layer.keyframes?.length
-    ? layer.keyframes.reduce((min, kf) => Math.min(min, kf.t), Infinity)
-    : 0;
+  const layerStart = layer.keyframes?.length ? Math.min(...layer.keyframes.map((kf) => kf.t)) : 0;
   const localMs = Math.max(0, elapsedMs - layerStart);
 
   if (layer.frameDurations) {
@@ -63,12 +61,16 @@ function resolveKeyframe(keyframe, renderEvent) {
   };
 }
 
-function resolveRef(ref, renderEvent) {
-  if (ref === 'attacker.from') return renderEvent.attacker.from;
-  if (ref === 'attacker.to') return renderEvent.attacker.to;
-  if (ref === 'victim.at') return renderEvent.victim.at;
+const REFS = {
+  'attacker.from': (e) => e.attacker.from,
+  'attacker.to': (e) => e.attacker.to,
+  'victim.at': (e) => e.victim.at
+};
 
-  throw new Error(`Unknown timeline ref: ${ref}`);
+function resolveRef(ref, renderEvent) {
+  const resolve = REFS[ref];
+  if (!resolve) throw new Error(`Unknown timeline ref: ${ref}`);
+  return resolve(renderEvent);
 }
 
 function lerp(from, to, progress) {

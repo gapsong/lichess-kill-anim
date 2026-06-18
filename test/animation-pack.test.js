@@ -22,27 +22,27 @@ test('selects the first matching timeline rule', () => {
 
 test('default pack routes knight to dagger-kill timeline', () => {
   const timeline = selectTimeline(defaultAnimationPack, { attacker: { piece: 'n' } });
-  assert.deepEqual(timeline.layers.map((l) => l.id), ['crosshair', 'slash']);
+  assert.deepEqual(timeline.layers.map((l) => l.id), ['crosshair', 'flash', 'slash']);
 });
 
 test('default pack routes queen to queen-shockwave timeline', () => {
   const timeline = selectTimeline(defaultAnimationPack, { attacker: { piece: 'q' } });
-  assert.deepEqual(timeline.layers.map((l) => l.id), ['crosshair', 'shockwave']);
+  assert.deepEqual(timeline.layers.map((l) => l.id), ['crosshair', 'flash', 'shockwave']);
 });
 
 test('default pack routes rook to rook-impact timeline', () => {
   const timeline = selectTimeline(defaultAnimationPack, { attacker: { piece: 'r' } });
-  assert.deepEqual(timeline.layers.map((l) => l.id), ['crosshair', 'impact']);
+  assert.deepEqual(timeline.layers.map((l) => l.id), ['crosshair', 'flash', 'impact']);
 });
 
 test('default pack routes pawn to pawn-pop timeline', () => {
   const timeline = selectTimeline(defaultAnimationPack, { attacker: { piece: 'p' } });
-  assert.deepEqual(timeline.layers.map((l) => l.id), ['crosshair', 'pop']);
+  assert.deepEqual(timeline.layers.map((l) => l.id), ['crosshair', 'flash', 'pop']);
 });
 
 test('default pack routes king and unknown pieces to kill-impact timeline', () => {
   const kingTimeline = selectTimeline(defaultAnimationPack, { attacker: { piece: 'k' } });
-  assert.deepEqual(kingTimeline.layers.map((l) => l.id), ['crosshair', 'impact']);
+  assert.deepEqual(kingTimeline.layers.map((l) => l.id), ['crosshair', 'flash', 'impact']);
 });
 
 test('crosshair is the first layer in every timeline with matching frame durations', () => {
@@ -57,13 +57,22 @@ test('crosshair is the first layer in every timeline with matching frame duratio
 test('kill-impact impact layer uses all 8 frames with variable durations', () => {
   const timeline = defaultAnimationPack.timelines['kill-impact'];
 
-  assert.deepEqual(timeline.layers[1].frames, [0, 1, 2, 3, 4, 5, 6, 7]);
-  assert.deepEqual(timeline.layers[1].frameDurations, [60, 80, 120, 160, 200, 240, 280, 360]);
+  assert.deepEqual(timeline.layers[2].frames, [0, 1, 2, 3, 4, 5, 6, 7]);
+  assert.deepEqual(timeline.layers[2].frameDurations, [60, 80, 120, 160, 200, 240, 280, 360]);
 });
 
 test('dagger-kill slash layer uses all 8 frames with variable durations', () => {
   const timeline = selectTimeline(defaultAnimationPack, { attacker: { piece: 'n' } });
 
-  assert.deepEqual(timeline.layers[1].frames, [0, 1, 2, 3, 4, 5, 6, 7]);
-  assert.deepEqual(timeline.layers[1].frameDurations, [60, 80, 60, 160, 220, 220, 280, 360]);
+  assert.deepEqual(timeline.layers[2].frames, [0, 1, 2, 3, 4, 5, 6, 7]);
+  assert.deepEqual(timeline.layers[2].frameDurations, [60, 80, 60, 160, 220, 220, 280, 360]);
+});
+
+test('every timeline has a flash layer and an impactAtMs at the impact moment', () => {
+  for (const [name, timeline] of Object.entries(defaultAnimationPack.timelines)) {
+    assert.equal(timeline.impactAtMs, 680, `expected impactAtMs for timeline ${name}`);
+    const flash = timeline.layers.find((l) => l.id === 'flash');
+    assert.ok(flash, `expected flash layer in timeline ${name}`);
+    assert.equal(flash.sheet, 'flash');
+  }
 });

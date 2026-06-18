@@ -91,11 +91,15 @@ export const timeline = { /* optional override für Keyframes */ };
   spike count ±2, hue ±15°, easing wechseln)
 - Generiert N Varianten in einem Rutsch
 
-### Phase 3 (später): Generator-Skill
+### Phase 3 (done): Generator-Skill
 - `.claude/commands/lab-generate.md` als Custom Slash-Command
-- Liest `docs/ANIMATION-PRINCIPLES.md` + Sieger der letzten Runden
-- Schreibt neue `vXXX.mjs` mit dokumentierter Hypothese
-- Updated `variants/<piece>/manifest.json`
+- Liest `docs/ANIMATION-PRINCIPLES.md` + letztes Round-Log unter
+  `lab/gan-harness/rounds/`
+- Orchestriert Phase 2 (`npm run lab:generate -- <piece> <champion>` →
+  Antwort in Tempfile → `--apply <tmp>`); kein neues File-I/O
+- Resultierend: neue `vXXX.mjs` + Manifest-Eintraege mit
+  `generatedBy: 'claude-skill'` + Round-Log
+- Aufruf: `/lab-generate <piece> <championId> [--count N]`
 
 ## Non-Goals (Phase 1)
 

@@ -1,3 +1,4 @@
+import { shakeElement } from './board-shake.js';
 import { CanvasOverlay } from './canvas-overlay.js';
 import { CanvasSpriteRenderer } from './canvas-sprite-renderer.js';
 import { CaptureEventStream } from './event-stream.js';
@@ -63,7 +64,12 @@ function ensureRenderer() {
       drawSprite: createCanvasSpriteDrawer({
         context: currentContext,
         pack: defaultAnimationPack
-      })
+      }),
+      onImpact: () => {
+        if (overlay.board) {
+          shakeElement(overlay.board, { amplitude: 3, durationMs: 160 });
+        }
+      }
     });
   }
 

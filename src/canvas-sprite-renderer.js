@@ -7,10 +7,12 @@ export class CanvasSpriteRenderer {
   constructor({
     pack,
     drawSprite,
+    onImpact = null,
     maxDurationMs = DEFAULT_MAX_DURATION_MS
   }) {
     this.pack = pack;
     this.drawSprite = drawSprite;
+    this.onImpact = onImpact;
     this.maxDurationMs = maxDurationMs;
     this.activeAnimations = [];
   }
@@ -27,25 +29,31 @@ export class CanvasSpriteRenderer {
       startedAt: nowMs,
       durationMs: Math.min(timelineDuration(timeline), this.maxDurationMs),
       timeline,
-      renderEvent
+      renderEvent,
+      impactFired: false
     });
 
     return true;
   }
 
   tick(nowMs = performance.now()) {
-    const stillActive = [];
-
-    for (const animation of this.activeAnimations) {
+    this.activeAnimations = this.activeAnimations.filter((animation) => {
       const elapsedMs = nowMs - animation.startedAt;
+      if (elapsedMs > animation.durationMs) return false;
+      this.fireImpact(animation, elapsedMs);
+      this.draw(animation, elapsedMs);
+      return true;
+    });
+  }
 
-      if (elapsedMs <= animation.durationMs) {
-        this.draw(animation, elapsedMs);
-        stillActive.push(animation);
-      }
-    }
+  fireImpact(animation, elapsedMs) {
+    if (animation.impactFired) return;
 
-    this.activeAnimations = stillActive;
+    const impactAtMs = animation.timeline.impactAtMs;
+    if (impactAtMs == null || elapsedMs < impactAtMs) return;
+
+    animation.impactFired = true;
+    this.onImpact?.(animation.renderEvent, animation.timeline);
   }
 
   draw(animation, elapsedMs) {
@@ -57,10 +65,6 @@ export class CanvasSpriteRenderer {
 }
 
 function timelineDuration(timeline) {
-  const keyframeEnd = Math.max(
-    0,
-    ...timeline.layers.flatMap((layer) => layer.keyframes.map((keyframe) => keyframe.t))
-  );
-
-  return Math.min(timeline.maxDurationMs ?? keyframeEnd, keyframeEnd);
+  const end = Math.max(0, ...timeline.layers.flatMap((l) => l.keyframes.map((kf) => kf.t)));
+  return Math.min(timeline.maxDurationMs ?? end, end);
 }
