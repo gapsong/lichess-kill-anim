@@ -3705,12 +3705,16 @@
       // 'signature' | 'random' | a fixed effect id
       intensity = 7,
       // 1..10
-      soundOn = true
+      soundOn = true,
+      buildupMs = 0
+      // 0 = instant impact; >0 = crosshair buildup before impact
     } = {}) {
       this.onImpact = onImpact;
       this.mode = mode;
       this.intensity = Math.max(1, Math.min(10, intensity));
       this.soundOn = soundOn;
+      this.buildupMs = buildupMs;
+      this.pending = [];
       this.particles = [];
       this._k = 1;
       this._S = REF_SQUARE;
@@ -3719,7 +3723,7 @@
       this.POOL = ["nuke", "slash", "zap", "smash", "pixel", "ascension", "splatter", "inferno", "vortex", "shatter"];
     }
     get activeCount() {
-      return this.particles.length;
+      return this.particles.length + this.pending.length;
     }
     /* ---------- public entry ---------- */
     play(renderEvent, nowMs = typeof performance !== "undefined" ? performance.now() : Date.now()) {
@@ -3733,14 +3737,43 @@
         type: renderEvent.victim.piece || "p",
         color: renderEvent.victim.color || "b"
       };
-      this.spawn(id, at.x, at.y, S, victim);
-      const lvl = this.intensity, sh = lvl / 6;
+      if (this.buildupMs > 0) {
+        this.spawnCrosshair(at.x, at.y, S);
+        this.pending.push({
+          id,
+          cx: at.x,
+          cy: at.y,
+          S,
+          victim,
+          renderEvent,
+          fireAt: nowMs + this.buildupMs
+        });
+      } else {
+        this.fireImpact(id, at.x, at.y, S, victim, renderEvent);
+      }
+      return true;
+    }
+    fireImpact(id, cx, cy, S, victim, renderEvent) {
+      this.spawn(id, cx, cy, S, victim);
+      const sh = this.intensity / 6;
       const amp = (this.SHAKE[id] || 6) * sh;
       this.onImpact?.(renderEvent, { amplitude: Math.max(2, amp), durationMs: 320 });
       if (this.soundOn) this.playSound(id);
-      return true;
+    }
+    spawnCrosshair(cx, cy, S) {
+      const frames = Math.max(8, Math.round(this.buildupMs / 16));
+      this.addP({ kind: "reticle", x: cx, y: cy, S, color: "#ff5a5a", max: frames });
     }
     tick(nowMs, ctx, size) {
+      if (this.pending.length) {
+        for (let i = this.pending.length - 1; i >= 0; i--) {
+          const q = this.pending[i];
+          if (nowMs >= q.fireAt) {
+            this.fireImpact(q.id, q.cx, q.cy, q.S, q.victim, q.renderEvent);
+            this.pending.splice(i, 1);
+          }
+        }
+      }
       if (!ctx) return;
       const ps = this.particles;
       for (let i = ps.length - 1; i >= 0; i--) {
@@ -3866,7 +3899,7 @@
         p.y = p.cy + Math.sin(p.ang) * p.rad;
         return;
       }
-      if (p.kind === "bolt" || p.kind === "flash" || p.kind === "beam" || p.kind === "streak") return;
+      if (p.kind === "bolt" || p.kind === "flash" || p.kind === "beam" || p.kind === "streak" || p.kind === "reticle") return;
       if (p.kind === "glyph" || p.kind === "glyphHalf" || p.kind === "text") {
         if (p.vy) p.y += p.vy;
         return;
@@ -3974,6 +4007,10 @@
       }
       if (p.kind === "glyphHalf") {
         this.drawGlyphHalf(p, ctx, t);
+        return;
+      }
+      if (p.kind === "reticle") {
+        this.drawReticle(p, ctx, t);
         return;
       }
       let a = p.fadeIn && p.life < 4 ? p.life / 4 : 1 - t;
@@ -4118,6 +4155,40 @@
       ctx.fillStyle = p.color;
       ctx.fillText(p.char, 0, 0);
       ctx.restore();
+      ctx.globalAlpha = 1;
+    }
+    drawReticle(p, ctx, t) {
+      const S = p.S;
+      const ease = 1 - Math.pow(1 - t, 2);
+      const gap = S * (0.95 - 0.45 * ease);
+      const len = S * 0.26;
+      const rot = t * Math.PI * 0.5;
+      const pulse = 0.55 + 0.45 * Math.abs(Math.sin(t * Math.PI * 6));
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.rotate(rot);
+      ctx.globalAlpha = Math.min(1, t * 4) * pulse;
+      ctx.strokeStyle = p.color;
+      ctx.lineWidth = Math.max(1.5, S * 0.04);
+      ctx.lineCap = "round";
+      ctx.shadowColor = p.color;
+      ctx.shadowBlur = 8;
+      for (let q = 0; q < 4; q++) {
+        const sx = q < 2 ? -1 : 1;
+        const sy = q % 2 === 0 ? -1 : 1;
+        const x = sx * gap, y = sy * gap;
+        ctx.beginPath();
+        ctx.moveTo(x, y - sy * len);
+        ctx.lineTo(x, y);
+        ctx.lineTo(x - sx * len, y);
+        ctx.stroke();
+      }
+      ctx.beginPath();
+      ctx.arc(0, 0, Math.max(1, S * 0.03), 0, 6.2832);
+      ctx.fillStyle = p.color;
+      ctx.fill();
+      ctx.restore();
+      ctx.shadowBlur = 0;
       ctx.globalAlpha = 1;
     }
     bolt(cx, cy, S) {
@@ -4403,6 +4474,7 @@
   var RENDER_MODE = "signature";
   var INTENSITY = 7;
   var SOUND_ON = true;
+  var BUILDUP_MS = 680;
   var PIECE_NAMES = {
     p: "Bauer",
     n: "Springer",
@@ -4449,6 +4521,7 @@
         mode: RENDER_MODE,
         intensity: INTENSITY,
         soundOn: SOUND_ON,
+        buildupMs: BUILDUP_MS,
         onImpact: (renderEvent, opts) => {
           if (overlay.board) {
             shakeElement(overlay.board, {
