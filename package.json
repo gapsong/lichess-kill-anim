@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "build": "node scripts/build-userscript.mjs",
+    "build:ext": "node scripts/build-extension.mjs",
+    "package:ext": "node scripts/build-extension.mjs --zip",
     "test": "node --test",
     "lab": "npm --prefix lab run dev",
     "lab:install": "npm --prefix lab install",

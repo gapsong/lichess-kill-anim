@@ -1,0 +1,14 @@
+{
+  "manifest_version": 3,
+  "name": "Lichess Kill Animations",
+  "version": "0.0.0",
+  "description": "Plays kill animations on captures at lichess.org.",
+  "content_scripts": [
+    {
+      "matches": ["https://lichess.org/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "permissions": ["storage"]
+}
