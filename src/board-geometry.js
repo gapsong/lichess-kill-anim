@@ -1,4 +1,14 @@
 export function squareCenter(square, boardRect, isBlackOrientation = false) {
+  const local = boardLocalSquareCenter(square, boardRect.width, isBlackOrientation);
+
+  return {
+    x: boardRect.left + local.x,
+    y: boardRect.top + local.y,
+    size: local.size
+  };
+}
+
+export function boardLocalSquareCenter(square, boardSize, isBlackOrientation = false) {
   let file = square.charCodeAt(0) - 97;
   let rank = 8 - Number.parseInt(square[1], 10);
 
@@ -7,11 +17,11 @@ export function squareCenter(square, boardRect, isBlackOrientation = false) {
     rank = 7 - rank;
   }
 
-  const size = boardRect.width / 8;
+  const size = boardSize / 8;
 
   return {
-    x: boardRect.left + file * size + size / 2,
-    y: boardRect.top + rank * size + size / 2,
+    x: file * size + size / 2,
+    y: rank * size + size / 2,
     size
   };
 }

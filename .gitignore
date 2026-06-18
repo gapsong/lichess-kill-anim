@@ -1,2 +1,9 @@
 node_modules/
+dist/
 npm-debug.log*
+
+# Animation Lab
+lab/node_modules/
+lab/archive/
+lab/results/
+scripts/animations/.backup/

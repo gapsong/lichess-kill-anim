@@ -7,11 +7,6 @@ const MOVE_SELECTORS = [
   'l4x kwdb'
 ];
 
-const FEN_SELECTORS = [
-  '[data-fen]',
-  'input.copyable',
-  '.analyse__underboard input'
-];
 
 export function readSnapshot(document, location = globalThis.location) {
   const sanMoves = readSanMoves(document);
@@ -19,6 +14,7 @@ export function readSnapshot(document, location = globalThis.location) {
 
   const initialFen = readInitialFen(document);
   const puzzleId = readPuzzleId(document);
+  const activePly = readActivePly(document);
   const context = puzzleId
     ? `puzzle:${puzzleId}|${initialFen ?? 'start'}`
     : (initialFen ?? 'start');
@@ -26,7 +22,8 @@ export function readSnapshot(document, location = globalThis.location) {
   return {
     id: `${location?.pathname ?? 'lichess'}|${context}`,
     initialFen,
-    sanMoves
+    sanMoves,
+    activePly
   };
 }
 
@@ -43,20 +40,23 @@ export function readSanMoves(document) {
 }
 
 function readInitialFen(document) {
-  for (const selector of FEN_SELECTORS) {
-    const element = document.querySelector(selector);
-    const value = element?.dataset?.fen || element?.value || element?.textContent;
-    const fen = normalizeFen(value);
-    if (fen) return fen;
-  }
-
-  return null;
+  const el = document.querySelector('[data-fen]');
+  return normalizeFen(el?.dataset.fen) ?? null;
 }
 
 function readPuzzleId(document) {
-  const links = [...document.querySelectorAll('main.puzzle a[href*="/training/"]')];
-  const link = links.find((element) => /^#[A-Za-z0-9]+$/.test(element.textContent?.trim() ?? ''));
-  return link?.textContent?.trim().slice(1) || null;
+  return [...document.querySelectorAll('main.puzzle a[href*="/training/"]')]
+    .find((el) => /^#[A-Za-z0-9]+$/.test(el.textContent?.trim() ?? ''))
+    ?.textContent?.trim().slice(1) || null;
+}
+
+function readActivePly(document) {
+  const activeSan = document.querySelector('move.active san');
+  if (!activeSan) return null;
+
+  const allSans = [...document.querySelectorAll('move san')];
+  const index = allSans.indexOf(activeSan);
+  return index >= 0 ? index + 1 : null;
 }
 
 function normalizeSan(value) {
@@ -64,8 +64,7 @@ function normalizeSan(value) {
     ?.trim()
     .replace(/\s+/g, '')
     .replace(/^\d+\.(\.\.)?/, '')
-    .replace(/[✓✗]+$/g, '')
-    .replace(/[!?]+$/g, '')
+    .replace(/[✓✗!?]+$/g, '')
     || null;
 }
 

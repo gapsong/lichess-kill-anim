@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Particle FX — board harness</title>
+<style>
+  html,body{margin:0;background:#16140f;color:#ece9e1;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;}
+  .wrap{display:flex;gap:28px;padding:28px;flex-wrap:wrap;align-items:flex-start;}
+  #stage{position:relative;}
+  cg-board{display:grid;grid-template-columns:repeat(8,1fr);grid-template-rows:repeat(8,1fr);width:512px;height:512px;border:3px solid #3a342c;box-shadow:0 18px 40px rgba(0,0,0,.5);}
+  cg-board .sq{display:flex;align-items:center;justify-content:center;font-size:44px;line-height:1;font-family:'Segoe UI Symbol','Noto Sans Symbols2','Apple Symbols',sans-serif;}
+  cg-board .sq.w{color:#f4f3ee;-webkit-text-stroke:1.2px #403e39;}
+  cg-board .sq.b{color:#2b2926;-webkit-text-stroke:1.2px #0d0c0a;}
+  #lichess-kill-overlay{position:fixed;pointer-events:none;z-index:5;}
+  aside{width:230px;display:flex;flex-direction:column;gap:8px;}
+  h2{font-size:13px;letter-spacing:2px;text-transform:uppercase;color:#9a958a;margin:4px 0;}
+  button{padding:9px 10px;border:1px solid rgba(255,255,255,.12);border-radius:8px;background:rgba(255,255,255,.05);color:#e8e4da;cursor:pointer;font-size:13px;text-align:left;}
+  button:hover{background:rgba(255,255,255,.1);}
+  .row{display:flex;gap:8px;align-items:center;font-size:12px;color:#9a958a;}
+  input[type=range]{flex:1;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div id="stage">
+    <cg-board id="board"></cg-board>
+  </div>
+  <aside>
+    <h2>Effects</h2>
+    <div id="fx"></div>
+    <h2>Piece routing (signature)</h2>
+    <div id="route"></div>
+    <h2>Controls</h2>
+    <div class="row"><span>Intensity</span><input id="int" type="range" min="1" max="10" value="7"><span id="intv">7</span></div>
+    <label class="row"><input id="snd" type="checkbox"> Sound</label>
+    <button id="auto">▶ Auto-fire random</button>
+  </aside>
+</div>
+
+<script type="module">
+import { ParticleFxRenderer } from '../../src/particle-fx-renderer.js';
+
+const PIECES = ['r','n','b','q','k','b','n','r'];
+const board = document.getElementById('board');
+// fill an 8x8 with a couple of pieces to read as a board
+for (let i=0;i<64;i++){
+  const f=i%8, r=(i/8)|0, dark=(f+r)%2===1;
+  const sq=document.createElement('div');
+  sq.className='sq';
+  sq.style.background = dark ? '#b58863' : '#f0d9b5';
+  if(r===0){ sq.textContent={r:'\u265C',n:'\u265E',b:'\u265D',q:'\u265B',k:'\u265A'}[PIECES[f]]; sq.classList.add('b'); }
+  if(r===1){ sq.textContent='\u265F'; sq.classList.add('b'); }
+  if(r===6){ sq.textContent='\u2659'; sq.classList.add('w'); }
+  if(r===7){ sq.textContent={r:'\u2656',n:'\u2658',b:'\u2657',q:'\u2655',k:'\u2654'}[PIECES[f]]; sq.classList.add('w'); }
+  board.appendChild(sq);
+}
+
+// --- overlay canvas, fixed, sized to board (mirrors CanvasOverlay) ---
+const canvas = document.createElement('canvas');
+canvas.id='lichess-kill-overlay';
+document.body.appendChild(canvas);
+const dpr = window.devicePixelRatio||1;
+let ctx, SIZE=0;
+function sync(){
+  const rect = board.getBoundingClientRect();
+  SIZE = rect.width;
+  canvas.style.left=rect.left+'px'; canvas.style.top=rect.top+'px';
+  canvas.style.width=SIZE+'px'; canvas.style.height=SIZE+'px';
+  canvas.width=Math.round(SIZE*dpr); canvas.height=Math.round(SIZE*dpr);
+  ctx = canvas.getContext('2d');
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+}
+sync();
+window.addEventListener('resize', sync);
+
+function shake(el,{amplitude,durationMs}){
+  const fr=[{transform:'translate(0,0)'}];
+  for(let i=0;i<6;i++) fr.push({transform:`translate(${(Math.random()*2-1)*amplitude}px,${(Math.random()*2-1)*amplitude}px)`});
+  fr.push({transform:'translate(0,0)'});
+  el.animate(fr,{duration:durationMs,easing:'ease-out'});
+}
+
+const renderer = new ParticleFxRenderer({
+  onImpact: (re,opts)=>shake(board,opts),
+  soundOn: false,
+  intensity: 7
+});
+
+let raf=null;
+function frame(now){
+  raf=null;
+  sync();
+  ctx.clearRect(0,0,SIZE,SIZE);
+  renderer.tick(now, ctx, SIZE);
+  if(renderer.activeCount) raf=requestAnimationFrame(frame);
+}
+function loop(){ if(!raf) raf=requestAnimationFrame(frame); }
+
+function squareCenter(file, rank){ // board-local px, rank 0 = top
+  const s = SIZE/8;
+  return { x: file*s + s/2, y: rank*s + s/2 };
+}
+
+function fire(effectOverrideOrPiece, isPiece){
+  // pick a victim square (a black pawn at rank 1, some file)
+  const file = 2 + ((Math.random()*4)|0);
+  const c = squareCenter(file, 1);
+  const re = {
+    board: { size: SIZE, squareSize: SIZE/8, orientation:'white' },
+    attacker: { piece: isPiece ? effectOverrideOrPiece : 'q', color:'w', from:{square:'a1',x:0,y:SIZE}, to:{square:'x',x:c.x,y:c.y} },
+    victim: { piece:'p', color:'b', at:{ square:'x', x:c.x, y:c.y } },
+    direction: { dx:1, dy:-1, angleRad: Math.atan2(c.y-SIZE, c.x-0) }
+  };
+  if(!isPiece){ renderer.mode = effectOverrideOrPiece; }
+  else { renderer.mode = 'signature'; }
+  renderer.play(re);
+  loop();
+}
+
+const EFFECTS = ['nuke','splatter','slash','zap','smash','pixel','ascension','vortex','inferno','shatter'];
+const fxDiv=document.getElementById('fx');
+EFFECTS.forEach(id=>{ const b=document.createElement('button'); b.textContent='▶ '+id; b.onclick=()=>fire(id,false); fxDiv.appendChild(b); });
+
+const ROUTES=[['q','Queen → nuke'],['r','Rook → smash'],['n','Knight → slash'],['b','Bishop → zap'],['p','Pawn → pixel'],['k','King → ascension']];
+const routeDiv=document.getElementById('route');
+ROUTES.forEach(([p,label])=>{ const b=document.createElement('button'); b.textContent=label; b.onclick=()=>fire(p,true); routeDiv.appendChild(b); });
+
+document.getElementById('int').oninput=(e)=>{ renderer.intensity=+e.target.value; document.getElementById('intv').textContent=e.target.value; };
+document.getElementById('snd').onchange=(e)=>{ renderer.soundOn=e.target.checked; };
+let autoT=null;
+document.getElementById('auto').onclick=(e)=>{
+  if(autoT){ clearInterval(autoT); autoT=null; e.target.textContent='▶ Auto-fire random'; return; }
+  renderer.mode='random'; e.target.textContent='■ Stop';
+  autoT=setInterval(()=>fire('random',false),900);
+};
+
+window.__fire = fire; // for programmatic screenshots
+</script>
+</body>
+</html>
