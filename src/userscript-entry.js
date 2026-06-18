@@ -9,7 +9,7 @@ import { readSnapshot } from './move-feed.js';
 const RENDER_MODE = 'signature'; // 'signature' | 'random' | feste id wie 'nuke'
 const INTENSITY = 7;             // 1..10
 const SOUND_ON = true;           // WebAudio-Synth-SFX
-const BUILDUP_MS = 680;          // Targeting-Buildup vor Impact (0 = sofort)
+const BUILDUP_MS = 0;            // Targeting-Buildup vor Impact in ms (0 = sofort, kein Crosshair)
 const SHAKE_PIECES = ['q'];      // Board-Shake nur bei diesen Angreifer-Figuren (Default: nur Dame)
 
 const PIECE_NAMES = {
