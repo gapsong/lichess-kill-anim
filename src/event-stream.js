@@ -1,5 +1,9 @@
 import { deriveEvents } from './chess-state.js';
 
+function eventKey(e) {
+  return `${e.ply}:${e.san}:${e.from}:${e.to}`;
+}
+
 export class CaptureEventStream {
   constructor() {
     this.snapshotId = null;
@@ -26,14 +30,14 @@ export class CaptureEventStream {
       const activeEvent = allEvents.find((e) => e.ply === activePly);
       if (!activeEvent) return [];
 
-      const key = `${activeEvent.ply}:${activeEvent.san}:${activeEvent.from}:${activeEvent.to}`;
+      const key = eventKey(activeEvent);
       if (this.seen.has(key)) return [];
       this.seen.add(key);
       return [activeEvent];
     }
 
     return allEvents.filter((event) => {
-      const key = `${event.ply}:${event.san}:${event.from}:${event.to}`;
+      const key = eventKey(event);
       if (this.seen.has(key)) return false;
       this.seen.add(key);
       return true;

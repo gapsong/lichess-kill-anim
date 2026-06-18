@@ -28,27 +28,18 @@ export function createCanvasSpriteDrawer({ context, pack, loadImage = createImag
     if (!sheet) return;
 
     const image = loadImage(sheet.image);
-    if (image.complete === false) return;
+    if (!image.complete) return;
 
-    const rect = frameRect(sheet, sample.frame);
+    const { sx, sy, sw, sh } = frameRect(sheet, sample.frame);
     const size = sheet.drawSize ?? sheet.frameWidth;
 
     context.save();
+    context.imageSmoothingEnabled = false;
     context.globalAlpha = sample.alpha;
     context.translate(sample.x, sample.y);
     context.rotate(sample.rotation);
     context.scale(sample.scale, sample.scale);
-    context.drawImage(
-      image,
-      rect.sx,
-      rect.sy,
-      rect.sw,
-      rect.sh,
-      -size / 2,
-      -size / 2,
-      size,
-      size
-    );
+    context.drawImage(image, sx, sy, sw, sh, -size / 2, -size / 2, size, size);
     context.restore();
   };
 }
