@@ -4493,30 +4493,13 @@
     return parts.slice(0, 6).join(" ");
   }
 
-  // src/userscript-entry.js
-  var RENDER_MODE = "signature";
-  var INTENSITY = 7;
-  var SOUND_ON = true;
-  var BUILDUP_MS = 0;
-  var SHAKE_PIECES = ["q"];
-  var PIECE_NAMES = {
-    p: "Bauer",
-    n: "Springer",
-    b: "L\xE4ufer",
-    r: "Turm",
-    q: "Dame",
-    k: "K\xF6nig"
-  };
-  var stream = new CaptureEventStream();
-  var overlay = new CanvasOverlay();
-  var renderer = null;
-  var frameRequest = null;
-  var currentContext = null;
-  var currentSize = 0;
-  function toast(text) {
-    const old = document.getElementById("k-toast");
+  // src/runtime.js
+  var PIECE_NAMES = { p: "Bauer", n: "Springer", b: "L\xE4ufer", r: "Turm", q: "Dame", k: "K\xF6nig" };
+  function domToast(doc, text) {
+    if (!doc) return;
+    const old = doc.getElementById("k-toast");
     if (old) old.remove();
-    const element = document.createElement("div");
+    const element = doc.createElement("div");
     element.id = "k-toast";
     element.textContent = `${text} \u{1F4A5}`;
     Object.assign(element.style, {
@@ -4531,74 +4514,136 @@
       borderRadius: "8px",
       border: "2px solid #ff6b6b"
     });
-    document.body.appendChild(element);
+    doc.body.appendChild(element);
     setTimeout(() => element.remove(), 2e3);
   }
-  function ensureRenderer() {
-    overlay.attach();
-    const state = overlay.sync();
-    if (!state?.context) return null;
-    currentContext = state.context;
-    currentSize = state.size;
-    if (!renderer) {
-      renderer = new ParticleFxRenderer({
-        mode: RENDER_MODE,
-        intensity: INTENSITY,
-        soundOn: SOUND_ON,
-        buildupMs: BUILDUP_MS,
-        onImpact: (renderEvent, opts) => {
-          if (overlay.board && SHAKE_PIECES.includes(renderEvent?.attacker?.piece)) {
-            shakeElement(overlay.board, {
-              amplitude: opts?.amplitude ?? 3,
-              durationMs: opts?.durationMs ?? 160
-            });
-          }
-        }
-      });
-    }
-    return state;
-  }
-  function renderCapture(event, snapshotId) {
-    const state = ensureRenderer();
-    if (!state || !renderer) return;
-    const renderEvent = createRenderEvent(
-      event,
-      {
-        size: state.size,
-        isBlackOrientation: state.isBlackOrientation
-      },
-      snapshotId
-    );
-    toast(`${PIECE_NAMES[event.movingPiece] || "Figur"} schl\xE4gt`);
-    renderer.play(renderEvent);
-    startFrameLoop();
-  }
-  function startFrameLoop() {
-    if (frameRequest) return;
-    frameRequest = requestAnimationFrame(frame);
-  }
-  function frame(nowMs) {
-    frameRequest = null;
-    const state = overlay.sync();
-    if (state?.context) {
+  function createRuntime({
+    config,
+    createRenderer = (opts) => new ParticleFxRenderer(opts),
+    overlay = new CanvasOverlay(),
+    stream = new CaptureEventStream(),
+    readSnapshotFn = readSnapshot,
+    schedule = (cb) => requestAnimationFrame(cb),
+    cancel = (id) => cancelAnimationFrame(id),
+    doc = typeof document !== "undefined" ? document : null,
+    loc = typeof location !== "undefined" ? location : null,
+    observerFactory = (cb) => new MutationObserver(cb),
+    notify
+  } = {}) {
+    const settings = { ...config, shakePieces: [...config?.shakePieces ?? []] };
+    const emit = notify || ((text) => domToast(doc, text));
+    let renderer = null;
+    let frameRequest = null;
+    let currentContext = null;
+    let currentSize = 0;
+    let observer = null;
+    function ensureRenderer() {
+      overlay.attach();
+      const state = overlay.sync();
+      if (!state?.context) return null;
       currentContext = state.context;
       currentSize = state.size;
+      if (!renderer) {
+        renderer = createRenderer({
+          mode: settings.mode,
+          intensity: settings.intensity,
+          soundOn: settings.soundOn,
+          buildupMs: settings.buildupMs,
+          onImpact: (renderEvent, opts) => {
+            if (overlay.board && settings.shakePieces.includes(renderEvent?.attacker?.piece)) {
+              shakeElement(overlay.board, {
+                amplitude: opts?.amplitude ?? 3,
+                durationMs: opts?.durationMs ?? 160
+              });
+            }
+          }
+        });
+      }
+      return state;
     }
-    currentContext?.clearRect(0, 0, currentSize, currentSize);
-    renderer?.tick(nowMs, currentContext, currentSize);
-    if (renderer?.activeCount) {
-      frameRequest = requestAnimationFrame(frame);
+    function renderCapture(event, snapshotId) {
+      if (!settings.enabled) return;
+      const state = ensureRenderer();
+      if (!state || !renderer) return;
+      const renderEvent = createRenderEvent(
+        event,
+        { size: state.size, isBlackOrientation: state.isBlackOrientation },
+        snapshotId
+      );
+      emit(`${PIECE_NAMES[event.movingPiece] || "Figur"} schl\xE4gt`);
+      renderer.play(renderEvent);
+      startFrameLoop();
     }
+    function startFrameLoop() {
+      if (frameRequest != null) return;
+      frameRequest = schedule(frame);
+    }
+    function frame(nowMs) {
+      frameRequest = null;
+      const state = overlay.sync();
+      if (state?.context) {
+        currentContext = state.context;
+        currentSize = state.size;
+      }
+      currentContext?.clearRect(0, 0, currentSize, currentSize);
+      renderer?.tick(nowMs, currentContext, currentSize);
+      if (renderer?.activeCount) frameRequest = schedule(frame);
+    }
+    function scan() {
+      const snapshot = readSnapshotFn(doc, loc);
+      const events = stream.next(snapshot);
+      events.forEach((event) => renderCapture(event, snapshot?.id));
+    }
+    function start() {
+      if (doc) {
+        observer = observerFactory(scan);
+        observer.observe(doc.body, { childList: true, subtree: true });
+      }
+      scan();
+    }
+    function applyConfig(partial) {
+      Object.assign(settings, partial);
+      if (partial && Array.isArray(partial.shakePieces)) settings.shakePieces = [...partial.shakePieces];
+      if (renderer) {
+        renderer.mode = settings.mode;
+        renderer.intensity = Math.max(1, Math.min(10, settings.intensity));
+        renderer.soundOn = settings.soundOn;
+        renderer.buildupMs = settings.buildupMs;
+      }
+    }
+    function stop() {
+      if (observer) {
+        observer.disconnect();
+        observer = null;
+      }
+      if (frameRequest != null) {
+        cancel(frameRequest);
+        frameRequest = null;
+      }
+    }
+    return {
+      start,
+      stop,
+      applyConfig,
+      get renderer() {
+        return renderer;
+      },
+      get settings() {
+        return settings;
+      }
+    };
   }
-  function scan() {
-    const snapshot = readSnapshot(document, location);
-    const events = stream.next(snapshot);
-    events.forEach((event) => renderCapture(event, snapshot.id));
-  }
-  var observer = new MutationObserver(scan);
-  observer.observe(document.body, {
-    childList: true,
-    subtree: true
-  });
-  scan();
+
+  // src/settings.js
+  var DEFAULT_SETTINGS = {
+    enabled: true,
+    mode: "signature",
+    intensity: 7,
+    soundOn: true,
+    buildupMs: 0,
+    shakePieces: ["q"]
+  };
+
+  // src/userscript-entry.js
+  createRuntime({ config: DEFAULT_SETTINGS }).start();
 })();
