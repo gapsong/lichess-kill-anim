@@ -4474,7 +4474,7 @@
   var RENDER_MODE = "signature";
   var INTENSITY = 7;
   var SOUND_ON = true;
-  var BUILDUP_MS = 680;
+  var BUILDUP_MS = 0;
   var SHAKE_PIECES = ["q"];
   var PIECE_NAMES = {
     p: "Bauer",
