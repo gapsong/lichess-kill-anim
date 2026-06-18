@@ -4475,6 +4475,7 @@
   var INTENSITY = 7;
   var SOUND_ON = true;
   var BUILDUP_MS = 680;
+  var SHAKE_PIECES = ["q"];
   var PIECE_NAMES = {
     p: "Bauer",
     n: "Springer",
@@ -4523,7 +4524,7 @@
         soundOn: SOUND_ON,
         buildupMs: BUILDUP_MS,
         onImpact: (renderEvent, opts) => {
-          if (overlay.board) {
+          if (overlay.board && SHAKE_PIECES.includes(renderEvent?.attacker?.piece)) {
             shakeElement(overlay.board, {
               amplitude: opts?.amplitude ?? 3,
               durationMs: opts?.durationMs ?? 160
