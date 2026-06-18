@@ -1,6 +1,6 @@
 # Lichess Kill Animations
 
-Tampermonkey userscript for lichess.org that visualizes captures with canvas-based kill animations. When a piece is taken, a sprite animation plays over the board via a dedicated overlay canvas — no DOM manipulation of Lichess pieces.
+Tampermonkey userscript for lichess.org that visualizes captures with canvas-based kill animations. When a piece is taken, a live particle effect plays over the board via a dedicated overlay canvas — no DOM manipulation of Lichess pieces.
 
 ## Installation
 
@@ -31,13 +31,13 @@ Tampermonkey userscript for lichess.org that visualizes captures with canvas-bas
 ## How it works
 
 ```
-Lichess DOM → MoveFeed → chess.js → CaptureEvent → RenderEvent → CanvasSpriteRenderer
+Lichess DOM → MoveFeed → chess.js → CaptureEvent → RenderEvent → ParticleFxRenderer
 ```
 
 - **MoveFeed** reads the move list from the Lichess DOM
 - **chess.js** is the single source of truth for chess logic — captures, en passant, piece types
 - **CaptureEventStream** deduplicates events; on the analysis board it tracks the active ply so animations fire on navigation, not all at once at page load
-- **CanvasSpriteRenderer** plays declarative sprite timelines on a `<canvas>` overlay positioned above `cg-board`
+- **ParticleFxRenderer** plays a live particle effect on a `<canvas>` overlay positioned above `cg-board`; each piece type has a signature effect (`nuke`, `smash`, `slash`, `zap`, `pixel`, `ascension`); a targeting reticle appears first (configurable buildup before impact)
 
 The board DOM is only used for geometry (pixel coordinates) and move lists. No Lichess piece elements are modified.
 
@@ -61,11 +61,8 @@ Source lives in `src/`. `npm run build` bundles everything including `chess.js` 
 | `src/event-stream.js` | Deduplicates events; handles analysis board active-ply tracking |
 | `src/board-geometry.js` | Converts squares to pixel coordinates |
 | `src/canvas-overlay.js` | Manages the `#lichess-kill-overlay` canvas |
-| `src/animation-pack.js` | Rule engine for selecting timelines |
-| `src/timeline.js` | Keyframe interpolation |
-| `src/spritesheet.js` | Sprite drawing from Base64-embedded spritesheets |
-| `src/canvas-sprite-renderer.js` | Parallel timeline playback loop |
-| `src/default-animation-pack.js` | Embedded debug spritesheet + default timelines |
+| `src/particle-fx-renderer.js` | Live particle engine; routes piece types to signature effects; WebAudio synth SFX |
+| `src/board-shake.js` | Vlambeer-style screen shake on `cg-board`, triggered via `onImpact` |
 | `src/userscript-entry.js` | Tampermonkey entry point |
 
 ### Debug scripts
