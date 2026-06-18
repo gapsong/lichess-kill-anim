@@ -3899,7 +3899,7 @@
         p.y = p.cy + Math.sin(p.ang) * p.rad;
         return;
       }
-      if (p.kind === "bolt" || p.kind === "flash" || p.kind === "beam" || p.kind === "streak" || p.kind === "reticle") return;
+      if (p.kind === "bolt" || p.kind === "flash" || p.kind === "beam" || p.kind === "streak" || p.kind === "reticle" || p.kind === "ring") return;
       if (p.kind === "glyph" || p.kind === "glyphHalf" || p.kind === "text") {
         if (p.vy) p.y += p.vy;
         return;
@@ -4011,6 +4011,10 @@
       }
       if (p.kind === "reticle") {
         this.drawReticle(p, ctx, t);
+        return;
+      }
+      if (p.kind === "ring") {
+        this.drawRing(p, ctx, t);
         return;
       }
       let a = p.fadeIn && p.life < 4 ? p.life / 4 : 1 - t;
@@ -4157,6 +4161,23 @@
       ctx.restore();
       ctx.globalAlpha = 1;
     }
+    drawRing(p, ctx, t) {
+      const e = 1 - Math.pow(1 - t, 3);
+      const r = p.r0 + (p.r1 - p.r0) * e;
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+      ctx.globalAlpha = Math.max(0, 1 - t);
+      ctx.strokeStyle = p.color;
+      ctx.lineWidth = Math.max(1, p.lw * (1 - t));
+      ctx.shadowColor = p.color;
+      ctx.shadowBlur = 16;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, Math.max(0.5, r), 0, 6.2832);
+      ctx.stroke();
+      ctx.restore();
+      ctx.shadowBlur = 0;
+      ctx.globalAlpha = 1;
+    }
     drawReticle(p, ctx, t) {
       const S = p.S;
       const ease = 1 - Math.pow(1 - t, 2);
@@ -4206,23 +4227,25 @@
     spawn(id, cx, cy, S, victim) {
       const lvl = this.intensity, cs = 0.5 + lvl / 13;
       if (id === "nuke") {
-        this.flashBlob(cx, cy, "#ffd9a0", S, 16);
+        this.flashBlob(cx, cy, "#d9b3ff", S, 16);
+        this.addP({ kind: "ring", x: cx, y: cy, r0: S * 0.15, r1: S * 2.7, lw: S * 0.16, color: "#b98cff", max: 22 });
+        this.addP({ kind: "ring", x: cx, y: cy, r0: S * 0.1, r1: S * 1.7, lw: S * 0.09, color: "#ecd9ff", max: 15 });
         this.glyph(victim, cx, cy, S, "nuke", 18);
-        this.bigText("BOOM", "#ff8a3d", cx, cy, 1);
+        this.bigText("BOOM", "#cf9bff", cx, cy, 1);
         let N = Math.round(46 * cs);
         for (let i = 0; i < N; i++) {
           const a = Math.random() * 6.28, sp = this.rand(3, 13);
-          this.addP({ x: cx, y: cy, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, g: 0.06, drag: 0.93, max: this.rand(28, 52), size: this.rand(4, 11), color: this.pickc(["#fff2b0", "#ffb13d", "#ff6a1f", "#e23d12"]), glow: 14, grow: 0.3 });
+          this.addP({ x: cx, y: cy, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, g: 0.06, drag: 0.93, max: this.rand(28, 52), size: this.rand(4, 11), color: this.pickc(["#f3e6ff", "#c9a0ff", "#9b5cff", "#5e23c9"]), glow: 14, grow: 0.3 });
         }
         N = Math.round(13 * cs);
         for (let i = 0; i < N; i++) {
           const a = Math.random() * 6.28, sp = this.rand(0.5, 3);
-          this.addP({ x: cx, y: cy, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 1.2, g: -0.02, drag: 0.96, max: this.rand(50, 80), size: this.rand(10, 22), color: "rgba(72,66,60,.5)", grow: 0.7, fadeIn: true });
+          this.addP({ x: cx, y: cy, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 1.2, g: -0.02, drag: 0.96, max: this.rand(50, 80), size: this.rand(10, 22), color: "rgba(58,40,92,.5)", grow: 0.7, fadeIn: true });
         }
         N = Math.round(20 * cs);
         for (let i = 0; i < N; i++) {
           const a = Math.random() * 6.28, sp = this.rand(6, 16);
-          this.addP({ x: cx, y: cy, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, g: 0.1, drag: 0.92, max: this.rand(16, 30), size: this.rand(1.5, 3), color: "#ffe89a", shape: "spark" });
+          this.addP({ x: cx, y: cy, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, g: 0.1, drag: 0.92, max: this.rand(16, 30), size: this.rand(1.5, 3), color: "#e6d2ff", shape: "spark" });
         }
       } else if (id === "splatter") {
         this.glyph(victim, cx, cy, S, "splatter", 14);
