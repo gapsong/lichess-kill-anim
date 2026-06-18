@@ -1,11 +1,14 @@
 import { shakeElement } from './board-shake.js';
 import { CanvasOverlay } from './canvas-overlay.js';
-import { CanvasSpriteRenderer } from './canvas-sprite-renderer.js';
 import { CaptureEventStream } from './event-stream.js';
-import { defaultAnimationPack } from './default-animation-pack.js';
 import { createRenderEvent } from './render-event.js';
-import { createCanvasSpriteDrawer } from './spritesheet.js';
+import { ParticleFxRenderer } from './particle-fx-renderer.js';
 import { readSnapshot } from './move-feed.js';
+
+// Renderer-Konfiguration (zur Laufzeit über renderer.* überschreibbar)
+const RENDER_MODE = 'signature'; // 'signature' | 'random' | feste id wie 'nuke'
+const INTENSITY = 7;             // 1..10
+const SOUND_ON = true;           // WebAudio-Synth-SFX
 
 const PIECE_NAMES = {
   p: 'Bauer',
@@ -59,15 +62,16 @@ function ensureRenderer() {
   currentSize = state.size;
 
   if (!renderer) {
-    renderer = new CanvasSpriteRenderer({
-      pack: defaultAnimationPack,
-      drawSprite: createCanvasSpriteDrawer({
-        context: currentContext,
-        pack: defaultAnimationPack
-      }),
-      onImpact: () => {
+    renderer = new ParticleFxRenderer({
+      mode: RENDER_MODE,
+      intensity: INTENSITY,
+      soundOn: SOUND_ON,
+      onImpact: (renderEvent, opts) => {
         if (overlay.board) {
-          shakeElement(overlay.board, { amplitude: 3, durationMs: 160 });
+          shakeElement(overlay.board, {
+            amplitude: opts?.amplitude ?? 3,
+            durationMs: opts?.durationMs ?? 160
+          });
         }
       }
     });
@@ -110,7 +114,7 @@ function frame(nowMs) {
   }
 
   currentContext?.clearRect(0, 0, currentSize, currentSize);
-  renderer?.tick(nowMs);
+  renderer?.tick(nowMs, currentContext, currentSize);
 
   if (renderer?.activeCount) {
     frameRequest = requestAnimationFrame(frame);
