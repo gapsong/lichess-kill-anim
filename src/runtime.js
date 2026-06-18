@@ -33,6 +33,7 @@ export function createRuntime({
   cancel = (id) => cancelAnimationFrame(id),
   doc = (typeof document !== 'undefined' ? document : null),
   loc = (typeof location !== 'undefined' ? location : null),
+  observerFactory = (cb) => new MutationObserver(cb),
   notify
 } = {}) {
   const settings = { ...config, shakePieces: [...(config?.shakePieces ?? [])] };
@@ -104,7 +105,7 @@ export function createRuntime({
 
   function start() {
     if (doc) {
-      observer = new MutationObserver(scan);
+      observer = observerFactory(scan);
       observer.observe(doc.body, { childList: true, subtree: true });
     }
     scan();
@@ -115,7 +116,7 @@ export function createRuntime({
     if (partial && Array.isArray(partial.shakePieces)) settings.shakePieces = [...partial.shakePieces];
     if (renderer) {
       renderer.mode = settings.mode;
-      renderer.intensity = settings.intensity;
+      renderer.intensity = Math.max(1, Math.min(10, settings.intensity));
       renderer.soundOn = settings.soundOn;
       renderer.buildupMs = settings.buildupMs;
     }
