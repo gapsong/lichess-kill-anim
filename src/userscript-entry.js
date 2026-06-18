@@ -9,6 +9,7 @@ import { readSnapshot } from './move-feed.js';
 const RENDER_MODE = 'signature'; // 'signature' | 'random' | feste id wie 'nuke'
 const INTENSITY = 7;             // 1..10
 const SOUND_ON = true;           // WebAudio-Synth-SFX
+const BUILDUP_MS = 680;          // Targeting-Buildup vor Impact (0 = sofort)
 
 const PIECE_NAMES = {
   p: 'Bauer',
@@ -66,6 +67,7 @@ function ensureRenderer() {
       mode: RENDER_MODE,
       intensity: INTENSITY,
       soundOn: SOUND_ON,
+      buildupMs: BUILDUP_MS,
       onImpact: (renderEvent, opts) => {
         if (overlay.board) {
           shakeElement(overlay.board, {
