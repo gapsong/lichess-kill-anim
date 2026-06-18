@@ -15,17 +15,7 @@ Der lesbare Quellcode liegt in `src/`. Die installierbare Tampermonkey-Datei ist
 Diese Datei wird generiert. Nicht direkt darin refactoren. Normale Aenderungen gehen in `src/`, danach:
 
 ```bash
-npm test
-npm run build
-node --check lichess-kill-notifier.user.js
-```
-
-Wenn Animation-Quellen in `scripts/animations/` geaendert wurden, vorher Spritesheets neu generieren:
-
-```bash
-node scripts/generate-spritesheet.mjs
-npm test
-npm run build
+npm test && npm run build && node --check lichess-kill-notifier.user.js
 ```
 
 Der aktuelle Stand ist ein gebundeltes Ein-Datei-Userscript: `chess.js` wird per `esbuild` eingebettet, damit Tampermonkey keine externe Runtime-Abhaengigkeit braucht.
@@ -40,57 +30,57 @@ Der aktuelle Stand ist ein gebundeltes Ein-Datei-Userscript: `chess.js` wird per
 - `src/event-stream.js`: dedupliziert Events ueber MutationObserver-Scans
 - `src/render-event.js`: reichert CaptureEvents mit board-lokalen Canvas-Koordinaten an
 - `src/canvas-overlay.js`: verwaltet ein board-lokales Canvas ueber `cg-board`
-- `src/animation-pack.js`: waehlt deklarative Timeline-Rules per `selectTimeline(pack, renderEvent)`
-- `src/timeline.js`: interpoliert Keyframes, unterstuetzt `rotationRef`
-- `src/spritesheet.js`: laedt Spritesheets und zeichnet Frames (nearest-neighbor, `imageSmoothingEnabled = false`)
-- `src/canvas-sprite-renderer.js`: spielt parallele Canvas-Sprite-Timelines; feuert `onImpact` einmalig, wenn `timeline.impactAtMs` ueberschritten wird
+- `src/particle-fx-renderer.js`: Live-Partikel-Engine; zeichnet alle Effekte direkt per Canvas-API (kein Spritesheet); unterstuetzt `buildupMs`-Crosshair vor Impact
 - `src/board-shake.js`: abklingender Screen-Shake auf `cg-board` (Vlambeer-Style), getriggert via `onImpact`
-- `src/default-animation-pack.js`: alle eingebetteten Spritesheets und Timelines
 - `src/userscript-entry.js`: Tampermonkey-Einstieg, Toasts und Canvas-Renderer
 
 ### Build-Scripts
 
 - `scripts/build-userscript.mjs`: baut die installierbare Datei via esbuild
-- `scripts/generate-spritesheet.mjs`: rendert alle Animation-Recipes zu PNG via Playwright, pixeliert sie (Pixelate-Pass, siehe unten) und bettet base64 in `src/default-animation-pack.js` ein (ersetzt den kompletten Spritesheet-Block pro Name, idempotent). Debug-Strips landen in `artifacts/spritesheets/` (`<name>.png` + `<name>@4x.png` auf dunklem Grund)
-
-### Pixelate-Pass (Pixel-Art-Look)
-
-Recipes werden weiterhin bei 128 px gezeichnet, dann auf ein logisches
-Pixel-Grid quantisiert (Gambonanza-Style, siehe `docs/PIXEL-ART-KILL-ANIM-GAMEPLAN.md`):
-
-- `recipe.pixelGrid` (default 32): Zielaufloesung pro Frame; Strips werden in dieser Aufloesung gespeichert (`frameWidth`/`frameHeight` im Pack = pixelGrid)
-- `recipe.alphaCutoff` (default 48): Alpha < cutoff → transparent, sonst hart 255
-- `recipe.palette` (optional, `['#rrggbb', ...]`): nearest-color Quantisierung; ohne Palette Posterize auf 4 Levels pro Kanal
-- Upscaling auf `drawSize` passiert beim Zeichnen mit nearest neighbor
-
-### Animation-Recipes
-
-Jede Animation ist ein separates Modul unter `scripts/animations/`:
-
-- `explosion.mjs`: Feuerkugel fuer allgemeinen Impact (Fallback)
-- `dagger.mjs`: Dagger-Slash fuer Springer
-- `crosshair.mjs`: Targeting-Reticle, erste Layer in allen Timelines
-- `slash.mjs`: Schwert-Slash fuer Laeufer (mit Richtungsrotation)
-- `shockwave.mjs`: Void-Ring fuer Dame (lila, Nocturne-Style)
-- `pop.mjs`: Kleiner schneller Burst fuer Bauer
-- `flash.mjs`: Weisser Hit-Flash auf dem Opfer-Feld, Layer in allen Timelines beim Impact (t≈680)
-- `shared.mjs`: Shared utility code (`rand`, `rg`, `debris`, `spark`, `sparks`, `drawBrackets`)
 
 ## Animation-System
 
-### Figur-zu-Timeline-Routing
+### Partikel-Engine (`ParticleFxRenderer`)
 
-| Figur | Timeline | Spritesheets |
-|-------|----------|--------------|
-| Dame (q) | `queen-shockwave` | crosshair + flash + shockwave |
-| Turm (r) | `rook-impact` | crosshair + flash + explosion (schwer, langsam) |
-| Springer (n) | `dagger-kill` | crosshair + flash + dagger |
-| Laeufer (b) | `slash-kill` | crosshair + flash + slash (mit `rotationRef`) |
-| Bauer (p) | `pawn-pop` | crosshair + flash + pop |
-| Rest / Fallback | `kill-impact` | crosshair + flash + explosion |
+Einstieg in `src/userscript-entry.js` mit diesen Konfigurations-Konstanten:
 
-Alle Timelines haben `impactAtMs: 680` (Impact-Moment nach Crosshair-Buildup).
-Beim Impact: Flash-Layer (650–800 ms) + Board-Shake via `onImpact`.
+```js
+const RENDER_MODE = 'signature'; // 'signature' | 'random' | feste id wie 'nuke'
+const INTENSITY   = 7;           // 1..10
+const SOUND_ON    = true;        // WebAudio-Synth-SFX
+const BUILDUP_MS  = 680;         // Targeting-Buildup vor Impact (0 = sofort)
+```
+
+Oeffentliches API von `ParticleFxRenderer`:
+
+```js
+const r = new ParticleFxRenderer({ mode, intensity, soundOn, buildupMs, onImpact });
+r.play(renderEvent, nowMs?);  // Effekt starten (gibt false zurueck wenn kein victim.at)
+r.tick(nowMs, ctx, size);     // Partikel weiterrechnen + zeichnen (board-lokale px)
+r.activeCount;                // > 0 => rAF-Loop weiter laufen lassen
+r.onImpact;                   // Callback(renderEvent, { amplitude, durationMs })
+```
+
+### Figur-zu-Effekt-Routing (SIG)
+
+| Figur des Angreifers | Effekt-ID |
+|----------------------|-----------|
+| Dame (q) | `nuke` |
+| Turm (r) | `smash` |
+| Springer (n) | `slash` |
+| Laeufer (b) | `zap` |
+| Bauer (p) | `pixel` |
+| Koenig (k) als Opfer | `ascension` |
+| Fallback | `splatter` |
+
+Zusaetzliche Effekte im Pool (erreichbar ueber `mode: 'random'` oder fixe id): `inferno`, `vortex`, `shatter`.
+
+Bei `mode: 'signature'` wird der Angreifer via `SIG`-Konstante geroutet; Opfer `k` hat Vorrang und liefert immer `ascension`.
+Bei `buildupMs > 0` (Default 680 ms im Userscript) erscheint zuerst ein Targeting-Reticle auf dem Opfer-Feld; nach Ablauf der Buildup-Zeit wird `fireImpact` aufgerufen und `onImpact` gefeuert (Board-Shake).
+
+### Tester
+
+`scripts/debug/harness.html` — lokales HTML-Testbed fuer `ParticleFxRenderer` ohne Lichess.
 
 ### RenderEvent-Struktur
 
@@ -118,80 +108,7 @@ Beim Impact: Flash-Layer (650–800 ms) + Board-Shake via `onImpact`.
 }
 ```
 
-`direction.angleRad` enthaelt den Winkel des Zuges in Bogenmas. Wird fuer `rotationRef: 'attacker.angle'` in Keyframes benutzt.
-
-### Timeline-Keyframe-Format
-
-```js
-{
-  t: 680,               // Zeitpunkt in ms
-  ref: 'victim.at',     // Positionsreferenz: 'victim.at' | 'attacker.from' | 'attacker.to'
-  scale: 1.4,
-  alpha: 1,
-  rotation: 0,          // optionaler Basis-Rotationsoffset in Rad
-  rotationRef: 'attacker.angle',  // optional: addiert direction.angleRad zur Rotation
-  dx: 0,                // optionaler Offset in Square-Einheiten (x)
-  dy: 0                 // optionaler Offset in Square-Einheiten (y)
-}
-```
-
-`rotationRef: 'attacker.angle'` macht eine Animation richtungsabhaengig. Der Laeufer-Slash dreht sich damit automatisch entlang der Diagonalen des Zuges.
-
-### Neue Animation schreiben
-
-1. `scripts/animations/myname.mjs` anlegen mit diesem Export:
-
-```js
-export const recipe = {
-  name: 'myname',
-  frameCount: 8,
-  frameSize: 128,     // Canvas-Kachelgroesse in px
-  drawSize: 84,       // Darstellungsgroesse im Spiel in px
-  frameDurations: [40, 55, 30, 65, 85, 95, 110, 130],  // ms pro Frame
-  frames: [frame0, frame1, ...]
-};
-```
-
-2. Frame-Funktionen: `function frame0(ctx, cx, cy) { ... }`
-
-   Wichtig: **Nur `var` verwenden**, kein `let`/`const`. Funktionen werden via `.toString()` serialisiert und in `page.evaluate()` injiziert.
-
-3. `scripts/generate-spritesheet.mjs`: Recipe importieren und zu `RECIPES` hinzufuegen.
-
-4. `src/default-animation-pack.js`: Spritesheet-Entry, Timeline und Regel ergaenzen.
-
-5. Generator laufen lassen: `node scripts/generate-spritesheet.mjs`
-
-### Glow-Technik (fuer professionelle Hit-Effekte)
-
-Additive Farbmischung macht Animationen gluehend:
-
-```js
-ctx.save();
-ctx.globalCompositeOperation = 'lighter';
-// Alles hier addiert Licht statt zu uebermalen
-ctx.restore();
-```
-
-Formel fuer Ring+Ray-Effekte (wie professionelle Hit-Packs):
-1. Breiter niedriger Glow-Blob (Radial-Gradient, sehr niedrige Alpha)
-2. Expandierender Ring-Strich
-3. 4–8 lange radiale Rays
-4. Kuerze Rays dazwischen
-5. Heller weisser Mittelpunkt (kuerzester Frame = Impact)
-
-### Verfuegbare Utility-Funktionen (in `shared.mjs`)
-
-```js
-rand(frame, i)                        // deterministischer Zufall [0,1), kein Math.random()
-rg(ctx, cx, cy, r0, r1, stops)        // Radial-Gradient, gibt gradient zurueck
-debris(ctx, cx, cy, frame, count, minDist, maxDist, colorFn, gravity?)
-spark(ctx, cx, cy, angle, dist, len, color, lineWidth?)
-sparks(ctx, cx, cy, frame, count, minDist, maxDist, color, lenMin, lenMax)
-drawBrackets(ctx, cx, cy, dist, size, lineWidth, color)
-```
-
-`rand()` statt `Math.random()` benutzen, damit Frames deterministisch und reproduzierbar sind.
+`direction.angleRad` enthaelt den Winkel des Zuges in Bogenmas.
 
 ## Lichess-DOM-Wissen
 
@@ -232,7 +149,7 @@ MoveFeed          → liest Lichess-Snapshot aus DOM
 ChessState        → rekonstruiert Spielzustand (chess.js)
 CaptureEventStream → dedupliziert CaptureEvents
 RenderEvent       → mappt CaptureEvent auf Canvas-Koordinaten + direction.angleRad
-CanvasSpriteRenderer → rendert deklarative Sprite-Timelines
+ParticleFxRenderer → rendert Live-Partikel-Effekte direkt per Canvas-API
 ```
 
 Single Source of Truth fuer Schachlogik ist der eigene Chess-State mit `chess.js`. Der sichtbare Board-DOM ist nur Input fuer Move-Liste und Pixel-Geometrie.
@@ -261,64 +178,20 @@ Bei En Passant ist `capturedAt` nicht gleich `to`; Animationen sollen auf `captu
 
 - `node:test` als Test Runner
 - `jsdom` fuer DOM-nahe MoveFeed-Tests
-- 85 Tests insgesamt
+- 72 Tests insgesamt
 
 Abgedeckt:
-- Routing aller Figuren zu korrekten Timelines
-- `rotationRef` addiert `direction.angleRad` korrekt
-- Keyframe-Interpolation incl. `dx`/`dy` Square-Offsets
-- Frame-Sampling mit `frameDurations` und `frameDurationMs`
-- `layerStart`-Korrektur (Frames zaehlen ab erstem Keyframe, nicht ab t=0)
+- Routing aller Figuren zu korrekten Partikel-Effekten (SIG-Tabelle)
+- `buildupMs`-Buildup-Timing: Pending-Queue und `fireAt`-Logik
+- Board-Shake via `onImpact`-Callback
 - Regressionstests fuer Lichess TV, Puzzle-ID-Reset, Feedback-Marker, En Passant
 
-## Animation Lab (`lab/`)
+## Animation Lab (`lab/`) — eingefroren
 
-Lokales Tournament-Tool zum Iterieren von Kill-Animationen. Eigenes Vite-Setup,
-separat vom Userscript-Build. Production-Pipeline und `npm test` (>=45 Tests)
-bleiben davon unberuehrt.
-
-Quickstart:
-
-```bash
-npm run lab:install          # einmalig: installiert vite in lab/
-npm run lab                  # startet Vite auf http://localhost:5173
-```
-
-Im Browser laeuft ein 2x2-Grid mit 4 hand-codierten Queen-Varianten in
-`lab/variants/queen/`. Alle 4 Canvas teilen sich `startTime` (synchroner
-Loop). Klick auf eine Variant archiviert die anderen drei und oeffnet das
-Modal fuer die naechste Runde. Tournament-State persistiert in
-`localStorage` (Key `lab:queen`).
-
-Promote-Workflow (Sieger zurueck in Production):
-
-```bash
-npm run lab:promote -- queen v003
-# backup -> scripts/animations/.backup/shockwave-<iso>.mjs
-# replace -> scripts/animations/shockwave.mjs
-# runs npm test; on fail: restores backup
-# then manuell: node scripts/generate-spritesheet.mjs && npm run build
-```
-
-Variant-Format: gleiches Recipe-Shape wie `scripts/animations/*.mjs`, plus
-JSDoc-Header mit `@hypothesis`. Frame-Funktionen nutzen `var` (Serialisierungs-
-Constraint bleibt, falls die Variante spaeter promotet wird). Helper (`rand`,
-`rg`, `spark`, etc.) werden zur Laufzeit auf `window` installiert
-(`lab/src/shared.js`), damit Variants sie als freie Identifier aufloesen
-koennen.
+`lab/` und `scripts/animations/` sind eingefroren: Sie haben keinen Production-Bezug mehr, da die Partikel-Engine keine Spritesheets benoetigt. Die Verzeichnisse existieren weiterhin auf Disk. Ein Umbau auf Partikel-Varianten ist in einer separaten Spec geplant und nicht Teil des aktuellen Stands.
 
 Pure Logik liegt in `lab/src/tournament.js` und wird via `node --test`
 mit `test/tournament.test.js` abgedeckt.
-
-Phase 1 (manuelles Tournament), Phase 2 (`lab/scripts/generate.mjs` —
-Prompt-Build, LM-Studio-Mode, Apply-Pipeline) und Phase 3 (Custom
-Slash-Command `/lab-generate` unter `.claude/commands/lab-generate.md`)
-sind implementiert. `/lab-generate <piece> <championId> [--count N]`
-laesst Claude selbst als Generator-Half laufen: ruft `cmdPrompt` auf,
-liest `docs/ANIMATION-PRINCIPLES.md` plus letztes Round-Log fuer Kontext,
-schreibt die Antwort in eine Tempdatei und reicht sie an
-`cmdApply` weiter (alle Manifest- und Round-Log-Schreibvorgaenge bleiben
-in Phase 2).
 
 ## Scope
 
@@ -344,8 +217,6 @@ Out of Scope:
 - Board-Geometrie darf Lichess-DOM kennen, aber keine Schachlogik.
 - Tests sollen Verhalten ueber oeffentliche Interfaces beschreiben.
 - `lichess-kill-notifier.user.js` nach Aenderungen in `src/` immer neu bauen.
-- Nach Aenderungen an `scripts/animations/*.mjs` immer `generate-spritesheet.mjs` laufen lassen.
-- `var` statt `let`/`const` in Frame-Funktionen (Serialisierungs-Constraint).
 
 ## Debug-Hilfen
 
