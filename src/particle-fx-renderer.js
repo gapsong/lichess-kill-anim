@@ -26,13 +26,17 @@ export class ParticleFxRenderer {
     mode = 'signature', // 'signature' | 'random' | a fixed effect id
     intensity = 7,      // 1..10
     soundOn = true,
-    buildupMs = 0       // 0 = instant impact; >0 = crosshair buildup before impact
+    buildupMs = 0,      // 0 = instant impact; >0 = crosshair buildup before impact
+    routing = null,     // map attacker piece -> effect; null = built-in SIG
+    fallback = 'splatter'
   } = {}) {
     this.onImpact = onImpact;
     this.mode = mode;
     this.intensity = Math.max(1, Math.min(10, intensity));
     this.soundOn = soundOn;
     this.buildupMs = buildupMs;
+    this.routing = routing;
+    this.fallback = fallback;
     this.pending = [];
     this.particles = [];
     this._k = 1;
@@ -117,7 +121,8 @@ export class ParticleFxRenderer {
     const victim = re.victim || {};
     const attacker = re.attacker || {};
     if (victim.piece === 'k') return 'ascension';
-    return SIG[attacker.piece] || 'splatter';
+    const map = this.routing || SIG;
+    return map[attacker.piece] || this.fallback || 'splatter';
   }
 
   /* ---------- helpers ---------- */

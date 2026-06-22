@@ -32,3 +32,9 @@ This produces `dist/lichess-kill-animations-v<version>.zip`.
 ## 5. Updates
 Bump `version` in `package.json`, run `npm run package:ext`, upload the new
 `.zip` to the same item, and submit again.
+
+## Note on permissions (gallery support)
+The extension declares `background` (a tiny service worker) and
+`externally_connectable` (the gallery origin) so the gallery can set the chosen
+animation. It still requests only the `storage` permission and contains no
+remote code. Single purpose is unchanged: kill animations on lichess.org.
