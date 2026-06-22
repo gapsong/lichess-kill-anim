@@ -23,6 +23,81 @@ function pieceAt(at, file, rank) {
   return at[`${file},${rank}`] || null;
 }
 
+function pieceAtSquare(at, sq) {
+  return pieceAt(at, sq.charCodeAt(0) - 97, Number(sq[1]));
+}
+function isPawnOf(piece, color) {
+  return piece && piece.type === 'p' && piece.color === color;
+}
+
+const FIANCHETTO = [
+  { bishop: 'g2', front: 'g3', s1: 'f2', s2: 'h2', color: 'w' },
+  { bishop: 'b2', front: 'b3', s1: 'a2', s2: 'c2', color: 'w' },
+  { bishop: 'g7', front: 'g6', s1: 'f7', s2: 'h7', color: 'b' },
+  { bishop: 'b7', front: 'b6', s1: 'a7', s2: 'c7', color: 'b' }
+];
+
+function detectFianchetto(at) {
+  const out = [];
+  for (const f of FIANCHETTO) {
+    const b = pieceAtSquare(at, f.bishop);
+    if (!b || b.type !== 'b' || b.color !== f.color) continue;
+    if (!isPawnOf(pieceAtSquare(at, f.front), f.color)) continue;
+    if (!isPawnOf(pieceAtSquare(at, f.s1), f.color)) continue;
+    if (!isPawnOf(pieceAtSquare(at, f.s2), f.color)) continue;
+    out.push({ type: 'fianchetto', side: f.color, squares: [f.bishop], line: null, label: 'Fianchetto' });
+  }
+  return out;
+}
+
+function detectOutposts(at) {
+  const out = [];
+  for (let f = 0; f < 8; f++) {
+    for (let r = 1; r <= 8; r++) {
+      const p = pieceAt(at, f, r);
+      if (!p || p.type !== 'n') continue;
+      const c = p.color;
+      const fwd = c === 'w' ? 1 : -1;
+      const inOpponentHalf = c === 'w' ? r >= 5 : r <= 4;
+      if (!inOpponentHalf) continue;
+      const defended = isPawnOf(pieceAt(at, f - 1, r - fwd), c) || isPawnOf(pieceAt(at, f + 1, r - fwd), c);
+      if (!defended) continue;
+      const enemy = c === 'w' ? 'b' : 'w';
+      let attackable = false;
+      for (const af of [f - 1, f + 1]) {
+        for (let rr = r + fwd; rr >= 1 && rr <= 8; rr += fwd) {
+          if (isPawnOf(pieceAt(at, af, rr), enemy)) attackable = true;
+        }
+      }
+      if (attackable) continue;
+      out.push({ type: 'outpost', side: c, squares: [toSquare(f, r)], line: null, label: 'Außenposten' });
+    }
+  }
+  return out;
+}
+
+function detectPassedPawns(at) {
+  const out = [];
+  for (let f = 0; f < 8; f++) {
+    for (let r = 1; r <= 8; r++) {
+      const p = pieceAt(at, f, r);
+      if (!p || p.type !== 'p') continue;
+      const c = p.color;
+      const fwd = c === 'w' ? 1 : -1;
+      const enemy = c === 'w' ? 'b' : 'w';
+      let blocked = false;
+      for (const af of [f - 1, f, f + 1]) {
+        if (af < 0 || af > 7) continue;
+        for (let rr = r + fwd; rr >= 1 && rr <= 8; rr += fwd) {
+          if (isPawnOf(pieceAt(at, af, rr), enemy)) blocked = true;
+        }
+      }
+      if (!blocked) out.push({ type: 'passed-pawn', side: c, squares: [toSquare(f, r)], line: null, label: 'Freibauer' });
+    }
+  }
+  return out;
+}
+
 function movesAlong(type, d) {
   const ortho = d[0] === 0 || d[1] === 0;
   const diag = Math.abs(d[0]) === Math.abs(d[1]) && d[0] !== 0;
@@ -127,6 +202,9 @@ export function detectPatterns(board) {
   return [
     ...detectBatteries(at),
     ...detectRooks(at),
-    ...detectPinsAndSkewers(at)
+    ...detectPinsAndSkewers(at),
+    ...detectFianchetto(at),
+    ...detectOutposts(at),
+    ...detectPassedPawns(at)
   ];
 }

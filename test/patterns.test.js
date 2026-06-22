@@ -45,3 +45,23 @@ test('every detected pattern has the required shape', () => {
     assert.ok(typeof pat.label === 'string' && pat.label.length > 0);
   }
 });
+
+test('fianchetto: white kingside fianchetto structure', () => {
+  const p = patterns('6k1/8/8/8/8/6P1/5PBP/6K1 w - - 0 1');
+  assert.ok(has(p, 'fianchetto', 'w'));
+});
+
+test('outpost: defended white knight that no pawn can attack', () => {
+  const p = patterns('6k1/8/8/3N4/4P3/8/8/6K1 w - - 0 1');
+  assert.ok(has(p, 'outpost', 'w'));
+});
+
+test('passed pawn: white pawn with no enemy pawns ahead', () => {
+  const p = patterns('6k1/8/8/4P3/8/8/8/6K1 w - - 0 1');
+  assert.ok(has(p, 'passed-pawn', 'w'));
+});
+
+test('not a passed pawn when an enemy pawn blocks the file', () => {
+  const p = patterns('6k1/8/4p3/4P3/8/8/8/6K1 w - - 0 1');
+  assert.ok(!has(p, 'passed-pawn', 'w'));
+});
