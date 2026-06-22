@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lichess Kill Animations</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:#15131f; color:#ece8f5; font-family:'Segoe UI',system-ui,sans-serif; }
+  header { padding:32px 24px 8px; }
+  h1 { margin:0; font-size:28px; letter-spacing:.01em; }
+  h1 .accent { color:#b98cff; }
+  header p { color:#9a93b0; margin:6px 0 0; }
+  #banner { margin:16px 24px 0; padding:12px 16px; border-radius:10px; background:#221c33; font-size:14px; }
+  #banner a { color:#b98cff; font-weight:600; text-decoration:none; }
+  main { display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:18px; padding:24px; }
+  .card { background:#1c1830; border-radius:12px; padding:14px; display:flex; flex-direction:column; gap:10px; }
+  .card canvas { width:100%; aspect-ratio:1/1; background:#0e0c17; border-radius:8px; display:block; }
+  .card .row { display:flex; align-items:center; justify-content:space-between; }
+  .card .label { font-weight:600; }
+  .card button { background:#b98cff; color:#15131f; border:0; border-radius:8px; padding:7px 12px; font-weight:600; cursor:pointer; }
+  .card button:disabled { opacity:.5; cursor:default; }
+  .card.active { outline:2px solid #b98cff; }
+</style>
+</head>
+<body>
+  <header>
+    <h1>Lichess Kill <span class="accent">Animations</span></h1>
+    <p>Pick an animation — it applies to your board instantly.</p>
+  </header>
+  <div id="banner"></div>
+  <main id="grid"></main>
+  <script src="gallery.js"></script>
+</body>
+</html>
