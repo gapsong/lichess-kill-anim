@@ -11,8 +11,19 @@ test('empty/undefined storage yields the defaults', () => {
 test('partial storage overrides only the named keys', () => {
   const out = mergeSettings({ intensity: 3 });
   assert.equal(out.intensity, 3);
-  assert.equal(out.mode, DEFAULT_SETTINGS.mode);
+  assert.equal(out.packId, DEFAULT_SETTINGS.packId);
   assert.equal(out.soundOn, DEFAULT_SETTINGS.soundOn);
+});
+
+test('packId defaults to signature and accepts known packs', () => {
+  assert.equal(mergeSettings({}).packId, 'signature');
+  assert.equal(mergeSettings({ packId: 'inferno' }).packId, 'inferno');
+  assert.equal(mergeSettings({ packId: 'fire' }).packId, 'fire');
+});
+
+test('unknown packId falls back to signature', () => {
+  assert.equal(mergeSettings({ packId: 'nope' }).packId, 'signature');
+  assert.equal(mergeSettings({ packId: 42 }).packId, 'signature');
 });
 
 test('intensity is clamped to 1..10 and falls back on non-numbers', () => {

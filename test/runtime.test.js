@@ -60,19 +60,34 @@ test('captures play when enabled', () => {
   assert.equal(played.length, 1);
 });
 
-test('applyConfig propagates mode/intensity/soundOn/buildupMs to the renderer', () => {
+test('applyConfig resolves packId into the renderer (mode/routing/fallback)', () => {
   const doc = setupDoc();
   let renderer;
   const rt = createRuntime(baseOpts(doc, {
     createRenderer: (opts) => (renderer = { ...opts, activeCount: 0, play() {}, tick() {} })
   }));
   rt.start();
-  assert.equal(renderer.intensity, 7);
-  rt.applyConfig({ intensity: 3, soundOn: false, mode: 'random', buildupMs: 680 });
+  assert.equal(renderer.mode, 'signature');
+  assert.equal(renderer.routing, null);
+  rt.applyConfig({ packId: 'inferno', intensity: 3, soundOn: false, buildupMs: 680 });
+  assert.equal(renderer.mode, 'inferno');
+  assert.equal(renderer.routing, null);
   assert.equal(renderer.intensity, 3);
   assert.equal(renderer.soundOn, false);
-  assert.equal(renderer.mode, 'random');
   assert.equal(renderer.buildupMs, 680);
+});
+
+test('applyConfig resolves a theme packId into routing', () => {
+  const doc = setupDoc();
+  let renderer;
+  const rt = createRuntime(baseOpts(doc, {
+    createRenderer: (opts) => (renderer = { ...opts, activeCount: 0, play() {}, tick() {} })
+  }));
+  rt.start();
+  rt.applyConfig({ packId: 'fire' });
+  assert.equal(renderer.mode, 'signature');
+  assert.equal(renderer.routing.q, 'inferno');
+  assert.equal(renderer.fallback, 'inferno');
 });
 
 test('stop disconnects the observer and cancels a pending frame', () => {
