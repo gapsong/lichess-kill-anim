@@ -29,12 +29,15 @@ function baseOpts(doc, overrides = {}) {
     config: { ...DEFAULT_SETTINGS },
     overlay: fakeOverlay(),
     stream: { next: () => [captureEvent] },
-    readSnapshotFn: () => ({ id: 's1' }),
+    readSnapshotFn: () => ({ id: 's1', sanMoves: ['e4'] }),
     schedule: () => 0,
     cancel() {},
     notify() {},
     doc,
     loc: {},
+    patternOverlay: { render() {}, clear() {} },
+    derivePositionFn: () => ({ board: [], turn: 'w' }),
+    detectPatternsFn: () => [],
     ...overrides
   };
 }
@@ -118,4 +121,37 @@ test('applyConfig clamps out-of-range intensity injected past mergeSettings', ()
   assert.equal(renderer.intensity, 10);
   rt.applyConfig({ intensity: -5 });
   assert.equal(renderer.intensity, 1);
+});
+
+test('patterns are rendered on scan when patternsOn is true', () => {
+  const doc = setupDoc();
+  const rendered = [];
+  const fakeOverlay = { render: (ps) => rendered.push(ps), clear() {} };
+  const sentinel = [{ type: 'battery', side: 'w', squares: ['d1'], line: null, label: 'Batterie' }];
+  const rt = createRuntime(baseOpts(doc, {
+    createRenderer: (opts) => ({ ...opts, activeCount: 0, play() {}, tick() {} }),
+    patternOverlay: fakeOverlay,
+    derivePositionFn: () => ({ board: [], turn: 'w' }),
+    detectPatternsFn: () => sentinel
+  }));
+  rt.start();
+  assert.equal(rendered.length, 1);
+  assert.deepEqual(rendered[0], sentinel);
+});
+
+test('patterns are cleared (not rendered) when patternsOn is false', () => {
+  const doc = setupDoc();
+  let cleared = 0;
+  const rendered = [];
+  const fakeOverlay = { render: (ps) => rendered.push(ps), clear: () => { cleared++; } };
+  const rt = createRuntime(baseOpts(doc, {
+    config: { ...DEFAULT_SETTINGS, patternsOn: false },
+    createRenderer: (opts) => ({ ...opts, activeCount: 0, play() {}, tick() {} }),
+    patternOverlay: fakeOverlay,
+    derivePositionFn: () => ({ board: [], turn: 'w' }),
+    detectPatternsFn: () => [{ type: 'battery', side: 'w', squares: ['d1'], line: null, label: 'Batterie' }]
+  }));
+  rt.start();
+  assert.equal(rendered.length, 0);
+  assert.ok(cleared >= 1);
 });

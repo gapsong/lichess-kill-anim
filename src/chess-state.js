@@ -36,3 +36,15 @@ export function deriveEvents(snapshot) {
 
   return events;
 }
+
+export function derivePosition(snapshot) {
+  const chess = snapshot.initialFen ? new Chess(snapshot.initialFen) : new Chess();
+  for (const san of snapshot.sanMoves) {
+    try {
+      chess.move(san);
+    } catch (_error) {
+      break;
+    }
+  }
+  return { board: chess.board(), turn: chess.turn() };
+}
