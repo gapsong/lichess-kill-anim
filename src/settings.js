@@ -8,6 +8,7 @@ export const DEFAULT_SETTINGS = {
   intensity: 7,
   soundOn: true,
   buildupMs: 0,
+  patternsOn: true,
   shakePieces: ['q']
 };
 
@@ -23,6 +24,7 @@ export function mergeSettings(stored) {
       : DEFAULT_SETTINGS.intensity,
     soundOn: typeof s.soundOn === 'boolean' ? s.soundOn : DEFAULT_SETTINGS.soundOn,
     buildupMs: Number.isFinite(buildupMs) ? Math.max(0, buildupMs) : DEFAULT_SETTINGS.buildupMs,
+    patternsOn: typeof s.patternsOn === 'boolean' ? s.patternsOn : DEFAULT_SETTINGS.patternsOn,
     shakePieces: Array.isArray(s.shakePieces)
       ? s.shakePieces.filter((p) => KNOWN_PIECES.includes(p))
       : [...DEFAULT_SETTINGS.shakePieces]
