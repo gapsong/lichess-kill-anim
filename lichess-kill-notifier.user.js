@@ -3593,6 +3593,17 @@
     }
     return events;
   }
+  function derivePosition(snapshot) {
+    const chess = snapshot.initialFen ? new Chess(snapshot.initialFen) : new Chess();
+    for (const san of snapshot.sanMoves) {
+      try {
+        chess.move(san);
+      } catch (_error) {
+        break;
+      }
+    }
+    return { board: chess.board(), turn: chess.turn() };
+  }
 
   // src/event-stream.js
   function eventKey(e) {
@@ -4559,6 +4570,315 @@
     return { mode: "signature", routing: null, fallback: "splatter" };
   }
 
+  // src/patterns.js
+  var FILES = "abcdefgh";
+  var VALUE2 = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 100 };
+  function toSquare(file2, rank2) {
+    return FILES[file2] + rank2;
+  }
+  function indexBoard(board) {
+    const at = {};
+    for (let r = 0; r < 8; r++) {
+      for (let f = 0; f < 8; f++) {
+        const cell = board[r][f];
+        if (cell) at[`${f},${8 - r}`] = { type: cell.type, color: cell.color };
+      }
+    }
+    return at;
+  }
+  function pieceAt(at, file2, rank2) {
+    if (file2 < 0 || file2 > 7 || rank2 < 1 || rank2 > 8) return void 0;
+    return at[`${file2},${rank2}`] || null;
+  }
+  function pieceAtSquare(at, sq) {
+    return pieceAt(at, sq.charCodeAt(0) - 97, Number(sq[1]));
+  }
+  function isPawnOf(piece, color) {
+    return piece && piece.type === "p" && piece.color === color;
+  }
+  var FIANCHETTO = [
+    { bishop: "g2", front: "g3", s1: "f2", s2: "h2", color: "w" },
+    { bishop: "b2", front: "b3", s1: "a2", s2: "c2", color: "w" },
+    { bishop: "g7", front: "g6", s1: "f7", s2: "h7", color: "b" },
+    { bishop: "b7", front: "b6", s1: "a7", s2: "c7", color: "b" }
+  ];
+  function detectFianchetto(at) {
+    const out = [];
+    for (const f of FIANCHETTO) {
+      const b = pieceAtSquare(at, f.bishop);
+      if (!b || b.type !== "b" || b.color !== f.color) continue;
+      if (!isPawnOf(pieceAtSquare(at, f.front), f.color)) continue;
+      if (!isPawnOf(pieceAtSquare(at, f.s1), f.color)) continue;
+      if (!isPawnOf(pieceAtSquare(at, f.s2), f.color)) continue;
+      out.push({ type: "fianchetto", side: f.color, squares: [f.bishop], line: null, label: "Fianchetto" });
+    }
+    return out;
+  }
+  function detectOutposts(at) {
+    const out = [];
+    for (let f = 0; f < 8; f++) {
+      for (let r = 1; r <= 8; r++) {
+        const p = pieceAt(at, f, r);
+        if (!p || p.type !== "n") continue;
+        const c = p.color;
+        const fwd = c === "w" ? 1 : -1;
+        const inOpponentHalf = c === "w" ? r >= 5 : r <= 4;
+        if (!inOpponentHalf) continue;
+        const defended = isPawnOf(pieceAt(at, f - 1, r - fwd), c) || isPawnOf(pieceAt(at, f + 1, r - fwd), c);
+        if (!defended) continue;
+        const enemy = c === "w" ? "b" : "w";
+        let attackable = false;
+        for (const af of [f - 1, f + 1]) {
+          for (let rr = r + fwd; rr >= 1 && rr <= 8; rr += fwd) {
+            if (isPawnOf(pieceAt(at, af, rr), enemy)) attackable = true;
+          }
+        }
+        if (attackable) continue;
+        out.push({ type: "outpost", side: c, squares: [toSquare(f, r)], line: null, label: "Au\xDFenposten" });
+      }
+    }
+    return out;
+  }
+  function detectPassedPawns(at) {
+    const out = [];
+    for (let f = 0; f < 8; f++) {
+      for (let r = 1; r <= 8; r++) {
+        const p = pieceAt(at, f, r);
+        if (!p || p.type !== "p") continue;
+        const c = p.color;
+        const fwd = c === "w" ? 1 : -1;
+        const enemy = c === "w" ? "b" : "w";
+        let blocked = false;
+        for (const af of [f - 1, f, f + 1]) {
+          if (af < 0 || af > 7) continue;
+          for (let rr = r + fwd; rr >= 1 && rr <= 8; rr += fwd) {
+            if (isPawnOf(pieceAt(at, af, rr), enemy)) blocked = true;
+          }
+        }
+        if (!blocked) out.push({ type: "passed-pawn", side: c, squares: [toSquare(f, r)], line: null, label: "Freibauer" });
+      }
+    }
+    return out;
+  }
+  function movesAlong(type, d) {
+    const ortho = d[0] === 0 || d[1] === 0;
+    const diag = Math.abs(d[0]) === Math.abs(d[1]) && d[0] !== 0;
+    if (type === "r") return ortho;
+    if (type === "b") return diag;
+    if (type === "q") return ortho || diag;
+    return false;
+  }
+  function firstHit(at, f, r, d) {
+    let nf = f + d[0];
+    let nr = r + d[1];
+    while (pieceAt(at, nf, nr) === null) {
+      nf += d[0];
+      nr += d[1];
+    }
+    const piece = pieceAt(at, nf, nr);
+    return piece ? { piece, file: nf, rank: nr } : null;
+  }
+  var ALL_DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
+  var ORTHO_DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+  function detectBatteries(at) {
+    const out = [];
+    const seen = /* @__PURE__ */ new Set();
+    for (let f = 0; f < 8; f++) {
+      for (let r = 1; r <= 8; r++) {
+        const p = pieceAt(at, f, r);
+        if (!p || !"rbq".includes(p.type)) continue;
+        for (const d of ALL_DIRS) {
+          if (!movesAlong(p.type, d)) continue;
+          const hit = firstHit(at, f, r, d);
+          if (!hit) continue;
+          const q = hit.piece;
+          if (q.color !== p.color || !"rbq".includes(q.type) || !movesAlong(q.type, d)) continue;
+          if (p.type !== "q" && q.type !== "q") continue;
+          const a = toSquare(f, r);
+          const b = toSquare(hit.file, hit.rank);
+          const key = [a, b].sort().join("-");
+          if (seen.has(key)) continue;
+          seen.add(key);
+          out.push({ type: "battery", side: p.color, squares: [a, b], line: { from: a, to: b }, label: "Batterie" });
+        }
+      }
+    }
+    return out;
+  }
+  function detectRooks(at) {
+    const out = [];
+    const seen = /* @__PURE__ */ new Set();
+    for (let f = 0; f < 8; f++) {
+      for (let r = 1; r <= 8; r++) {
+        const p = pieceAt(at, f, r);
+        if (!p || p.type !== "r") continue;
+        for (const d of ORTHO_DIRS) {
+          const hit = firstHit(at, f, r, d);
+          if (!hit || hit.piece.color !== p.color || hit.piece.type !== "r") continue;
+          const a = toSquare(f, r);
+          const b = toSquare(hit.file, hit.rank);
+          const key = [a, b].sort().join("-");
+          if (seen.has(key)) continue;
+          seen.add(key);
+          out.push({ type: "rooks", side: p.color, squares: [a, b], line: { from: a, to: b }, label: "T\xFCrme" });
+        }
+      }
+    }
+    return out;
+  }
+  function detectPinsAndSkewers(at) {
+    const out = [];
+    for (let f = 0; f < 8; f++) {
+      for (let r = 1; r <= 8; r++) {
+        const s = pieceAt(at, f, r);
+        if (!s || !"rbq".includes(s.type)) continue;
+        for (const d of ALL_DIRS) {
+          if (!movesAlong(s.type, d)) continue;
+          const first = firstHit(at, f, r, d);
+          if (!first || first.piece.color === s.color) continue;
+          const second = firstHit(at, first.file, first.rank, d);
+          if (!second || second.piece.color === s.color) continue;
+          const ssq = toSquare(f, r);
+          const f1 = toSquare(first.file, first.rank);
+          const f2 = toSquare(second.file, second.rank);
+          const v1 = VALUE2[first.piece.type];
+          const v2 = VALUE2[second.piece.type];
+          if (v2 > v1) {
+            out.push({ type: "pin", side: s.color, squares: [ssq, f1, f2], line: { from: ssq, to: f2 }, label: "Pin" });
+          } else if (v1 > v2) {
+            out.push({ type: "skewer", side: s.color, squares: [ssq, f1, f2], line: { from: ssq, to: f2 }, label: "Spie\xDF" });
+          }
+        }
+      }
+    }
+    return out;
+  }
+  function detectPatterns(board) {
+    const at = indexBoard(board);
+    return [
+      ...detectBatteries(at),
+      ...detectRooks(at),
+      ...detectPinsAndSkewers(at),
+      ...detectFianchetto(at),
+      ...detectOutposts(at),
+      ...detectPassedPawns(at)
+    ];
+  }
+
+  // src/pattern-overlay.js
+  var GREEN = "#3bd17a";
+  var RED = "#e5564b";
+  function patternColor(side, isBlackOrientation) {
+    const bottomSide = isBlackOrientation ? "b" : "w";
+    return side === bottomSide ? GREEN : RED;
+  }
+  var PatternOverlay = class {
+    constructor({
+      document: document2 = globalThis.document,
+      devicePixelRatio = globalThis.devicePixelRatio ?? 1,
+      ResizeObserver = globalThis.ResizeObserver,
+      getContext = (canvas) => canvas.getContext?.("2d")
+    } = {}) {
+      this.document = document2;
+      this.devicePixelRatio = devicePixelRatio;
+      this.ResizeObserver = ResizeObserver;
+      this.getContext = getContext;
+      this.canvas = null;
+      this.board = null;
+      this.resizeObserver = null;
+    }
+    attach() {
+      this.board = this.document.querySelector("cg-board");
+      if (!this.board) return null;
+      this.canvas = this.document.getElementById("lichess-pattern-overlay");
+      if (!this.canvas) {
+        this.canvas = this.document.createElement("canvas");
+        this.canvas.id = "lichess-pattern-overlay";
+        Object.assign(this.canvas.style, { position: "fixed", pointerEvents: "none", zIndex: "99997" });
+        this.document.body.appendChild(this.canvas);
+      }
+      if (this.ResizeObserver && !this.resizeObserver) {
+        this.resizeObserver = new this.ResizeObserver(() => this.sync());
+        this.resizeObserver.observe(this.board);
+      }
+      return this.canvas;
+    }
+    sync() {
+      if (!this.board) this.board = this.document.querySelector("cg-board");
+      if (!this.board || !this.canvas) return null;
+      const rect = this.board.getBoundingClientRect();
+      const size = rect.width;
+      const dpr = this.devicePixelRatio;
+      Object.assign(this.canvas.style, { left: `${rect.left}px`, top: `${rect.top}px`, width: `${size}px`, height: `${size}px` });
+      this.canvas.width = Math.round(size * dpr);
+      this.canvas.height = Math.round(size * dpr);
+      const context = this.getContext(this.canvas);
+      context?.setTransform?.(dpr, 0, 0, dpr, 0, 0);
+      const isBlackOrientation = this.document.querySelector(".cg-wrap")?.classList.contains("orientation-black") ?? false;
+      return { context, size, isBlackOrientation };
+    }
+    render(patterns) {
+      if (!this.canvas) this.attach();
+      const state = this.sync();
+      if (!state || !state.context) return;
+      const { context, size, isBlackOrientation } = state;
+      context.clearRect(0, 0, size, size);
+      for (const pattern of patterns) this._draw(pattern, context, size, isBlackOrientation);
+    }
+    clear() {
+      const state = this.sync();
+      if (state?.context) state.context.clearRect(0, 0, state.size, state.size);
+    }
+    _draw(pattern, ctx, size, isBlackOrientation) {
+      const color = patternColor(pattern.side, isBlackOrientation);
+      const sq = size / 8;
+      const center = (square) => boardLocalSquareCenter(square, size, isBlackOrientation);
+      for (const square of pattern.squares) {
+        const { x, y } = center(square);
+        ctx.save();
+        ctx.globalAlpha = 0.85;
+        ctx.strokeStyle = color;
+        ctx.lineWidth = Math.max(2, sq * 0.06);
+        ctx.shadowColor = color;
+        ctx.shadowBlur = sq * 0.35;
+        const inset = sq * 0.12;
+        ctx.strokeRect(x - sq / 2 + inset, y - sq / 2 + inset, sq - inset * 2, sq - inset * 2);
+        ctx.restore();
+      }
+      if (pattern.line) {
+        const a = center(pattern.line.from);
+        const b = center(pattern.line.to);
+        ctx.save();
+        ctx.globalAlpha = 0.55;
+        ctx.strokeStyle = color;
+        ctx.lineWidth = Math.max(2, sq * 0.05);
+        ctx.lineCap = "round";
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
+        ctx.restore();
+      }
+      const key = center(pattern.squares[0]);
+      const fontPx = Math.max(9, Math.round(sq * 0.22));
+      ctx.save();
+      ctx.font = `600 ${fontPx}px 'Space Grotesk', system-ui, sans-serif`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      const text = pattern.label;
+      const w = ctx.measureText(text).width + fontPx * 0.7;
+      const h = fontPx * 1.5;
+      const ly = key.y - sq * 0.42;
+      ctx.fillStyle = "rgba(20,18,28,0.85)";
+      ctx.beginPath();
+      ctx.roundRect(key.x - w / 2, ly - h / 2, w, h, h / 2);
+      ctx.fill();
+      ctx.fillStyle = color;
+      ctx.fillText(text, key.x, ly);
+      ctx.restore();
+    }
+  };
+
   // src/runtime.js
   var PIECE_NAMES = { p: "Bauer", n: "Springer", b: "L\xE4ufer", r: "Turm", q: "Dame", k: "K\xF6nig" };
   function domToast(doc, text) {
@@ -4594,6 +4914,9 @@
     doc = typeof document !== "undefined" ? document : null,
     loc = typeof location !== "undefined" ? location : null,
     observerFactory = (cb) => new MutationObserver(cb),
+    patternOverlay = new PatternOverlay(),
+    derivePositionFn = derivePosition,
+    detectPatternsFn = detectPatterns,
     notify
   } = {}) {
     const settings = { ...config, shakePieces: [...config?.shakePieces ?? []] };
@@ -4603,6 +4926,8 @@
     let currentContext = null;
     let currentSize = 0;
     let observer = null;
+    let lastPatternSig = null;
+    let lastSnapshot = null;
     function ensureRenderer() {
       overlay.attach();
       const state = overlay.sync();
@@ -4658,10 +4983,33 @@
       renderer?.tick(nowMs, currentContext, currentSize);
       if (renderer?.activeCount) frameRequest = schedule(frame);
     }
+    function patternSig(snapshot) {
+      if (!snapshot) return null;
+      const moves = snapshot.sanMoves || [];
+      return `${snapshot.id}|${moves.length}|${moves[moves.length - 1] || ""}`;
+    }
+    function renderPatterns(snapshot, force) {
+      if (!settings.patternsOn) {
+        patternOverlay.clear();
+        lastPatternSig = null;
+        return;
+      }
+      const sig = patternSig(snapshot);
+      if (!force && sig === lastPatternSig) return;
+      lastPatternSig = sig;
+      if (!snapshot) {
+        patternOverlay.clear();
+        return;
+      }
+      const { board } = derivePositionFn(snapshot);
+      patternOverlay.render(detectPatternsFn(board));
+    }
     function scan() {
       const snapshot = readSnapshotFn(doc, loc);
+      lastSnapshot = snapshot;
       const events = stream.next(snapshot);
       events.forEach((event) => renderCapture(event, snapshot?.id));
+      renderPatterns(snapshot, false);
     }
     function start() {
       if (doc) {
@@ -4681,6 +5029,9 @@
         renderer.intensity = Math.max(1, Math.min(10, settings.intensity));
         renderer.soundOn = settings.soundOn;
         renderer.buildupMs = settings.buildupMs;
+      }
+      if (partial && "patternsOn" in partial) {
+        renderPatterns(lastSnapshot, true);
       }
     }
     function stop() {
@@ -4713,6 +5064,7 @@
     intensity: 7,
     soundOn: true,
     buildupMs: 0,
+    patternsOn: true,
     shakePieces: ["q"]
   };
 
