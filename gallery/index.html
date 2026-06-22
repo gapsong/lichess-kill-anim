@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lichess Kill Animations</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #efe9dc;          /* warm parchment */
+    --surface: #f8f4ea;     /* card */
+    --line: #ddd2bd;        /* warm border */
+    --line-soft: rgba(58,50,42,0.08);
+    --txt: #3a322a;         /* espresso */
+    --muted: #8a7c66;
+    --accent: #8a5a36;      /* walnut */
+    --accent-soft: #a8703f;
+    color-scheme: light;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--txt);
+    font-family: 'Space Grotesk', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ---- sticky top bar ---- */
+  .topbar {
+    position: sticky; top: 0; z-index: 10;
+    background: rgba(239,233,220,0.82);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--line);
+  }
+  .topbar-inner {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 20px; flex-wrap: wrap;
+    padding: 18px 32px;
+    max-width: 1140px; margin: 0 auto;
+  }
+  .brand { display: flex; align-items: center; gap: 14px; }
+  .mark {
+    width: 34px; height: 34px; border-radius: 50%; flex: none;
+    border: 3px solid var(--accent);
+    box-shadow: inset 0 0 0 2px rgba(248,244,234,0.6);
+  }
+  h1 { margin: 0; font-size: 20px; font-weight: 600; letter-spacing: -0.01em; }
+  h1 .accent { color: var(--accent); }
+  .tagline { margin: 1px 0 0; font-size: 12.5px; color: var(--muted); }
+
+  .status {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-size: 12.5px; color: var(--muted);
+    padding: 7px 13px; border: 1px solid var(--line); border-radius: 999px;
+    background: rgba(248,244,234,0.7);
+  }
+  .status.ok { color: var(--accent); border-color: var(--accent-soft); }
+  .status .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; flex: none; }
+  .status a { color: var(--accent); font-weight: 500; text-decoration: underline; text-underline-offset: 2px; }
+
+  /* ---- hero (understated) ---- */
+  .hero { max-width: 1140px; margin: 0 auto; padding: 40px 32px 0; }
+  .hero h2 { margin: 0; font-size: 25px; font-weight: 600; letter-spacing: -0.01em; }
+  .hero p { margin: 9px 0 0; max-width: 56ch; color: var(--muted); font-size: 14.5px; line-height: 1.55; }
+
+  /* ---- sections ---- */
+  main { max-width: 1140px; margin: 0 auto; padding: 0 32px 24px; }
+  .section-title {
+    display: flex; align-items: center; gap: 16px;
+    font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.16em;
+    color: var(--muted); margin: 38px 2px 8px;
+  }
+  .section-title::after { content: ''; flex: 1; height: 1px; background: var(--line); }
+  .section-desc { margin: 0 2px 18px; max-width: 64ch; color: var(--muted); font-size: 13.5px; line-height: 1.5; }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(196px, 1fr)); gap: 16px; }
+
+  /* ---- card ---- */
+  .card {
+    position: relative;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 13px;
+    padding: 12px;
+    display: flex; flex-direction: column; gap: 11px;
+    box-shadow: 0 1px 2px rgba(58,50,42,0.05);
+    transition: transform .16s ease, border-color .16s ease, box-shadow .16s ease;
+  }
+  .card:hover {
+    transform: translateY(-2px);
+    border-color: var(--accent-soft);
+    box-shadow: 0 8px 20px -12px rgba(58,50,42,0.4);
+  }
+  .card.active {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px var(--accent), 0 8px 20px -12px rgba(58,50,42,0.4);
+  }
+  .card canvas {
+    width: 100%; aspect-ratio: 1 / 1; display: block;
+    border-radius: 9px; background: #d9c4a0;
+    box-shadow: inset 0 0 0 1px var(--line-soft);
+  }
+
+  .meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .meta .name { font-weight: 600; font-size: 14px; }
+  .meta button {
+    font-family: inherit; font-size: 12.5px; font-weight: 600;
+    color: #f8f4ea; background: var(--accent);
+    border: 0; border-radius: 999px; padding: 6px 15px; cursor: pointer;
+    transition: filter .14s ease, transform .08s ease, opacity .14s ease, background .14s ease, color .14s ease;
+  }
+  .meta button:hover:not(:disabled) { filter: brightness(1.06); transform: translateY(-1px); }
+  .meta button:active:not(:disabled) { transform: translateY(0) scale(0.96); }
+  .card.active .meta button { background: transparent; color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent-soft); }
+  .meta button:disabled { opacity: 0.4; cursor: default; }
+
+  footer {
+    max-width: 1140px; margin: 24px auto 0; padding: 24px 32px 52px;
+    color: var(--muted); font-size: 12.5px; border-top: 1px solid var(--line);
+  }
+</style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="brand">
+        <div class="mark" aria-hidden="true"></div>
+        <div>
+          <h1>Lichess Kill <span class="accent">Animations</span></h1>
+          <p class="tagline">Capture animations for lichess.org</p>
+        </div>
+      </div>
+      <div id="status" class="status"></div>
+    </div>
+  </header>
+
+  <section class="hero">
+    <h2>Pick your capture style.</h2>
+    <p>Every preview is a real capture, rendered live by the same engine that runs on your board. Click one — it applies instantly.</p>
+  </section>
+
+  <main id="content"></main>
+
+  <footer>Runs only on lichess.org · settings stored locally in your browser · no tracking.</footer>
+
+  <script src="gallery.js"></script>
+</body>
+</html>

@@ -4,6 +4,7 @@ import { CaptureEventStream } from './event-stream.js';
 import { createRenderEvent } from './render-event.js';
 import { ParticleFxRenderer } from './particle-fx-renderer.js';
 import { readSnapshot } from './move-feed.js';
+import { resolvePack } from './packs.js';
 
 const PIECE_NAMES = { p: 'Bauer', n: 'Springer', b: 'Läufer', r: 'Turm', q: 'Dame', k: 'König' };
 
@@ -51,8 +52,11 @@ export function createRuntime({
     currentContext = state.context;
     currentSize = state.size;
     if (!renderer) {
+      const packConfig = resolvePack(settings.packId);
       renderer = createRenderer({
-        mode: settings.mode,
+        mode: packConfig.mode,
+        routing: packConfig.routing,
+        fallback: packConfig.fallback,
         intensity: settings.intensity,
         soundOn: settings.soundOn,
         buildupMs: settings.buildupMs,
@@ -115,7 +119,10 @@ export function createRuntime({
     Object.assign(settings, partial);
     if (partial && Array.isArray(partial.shakePieces)) settings.shakePieces = [...partial.shakePieces];
     if (renderer) {
-      renderer.mode = settings.mode;
+      const packConfig = resolvePack(settings.packId);
+      renderer.mode = packConfig.mode;
+      renderer.routing = packConfig.routing;
+      renderer.fallback = packConfig.fallback;
       renderer.intensity = Math.max(1, Math.min(10, settings.intensity));
       renderer.soundOn = settings.soundOn;
       renderer.buildupMs = settings.buildupMs;

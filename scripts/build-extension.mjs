@@ -44,6 +44,17 @@ if (existsSync(popupEntry)) {
   });
 }
 
+const bgEntry = path.join(root, 'src', 'background-entry.js');
+if (existsSync(bgEntry)) {
+  await build({
+    entryPoints: [bgEntry],
+    outfile: path.join(outDir, 'background.js'),
+    bundle: true,
+    format: 'iife',
+    legalComments: 'none'
+  });
+}
+
 console.log('built extension ->', outDir);
 
 // package into an upload-ready zip when --zip is passed (Task 6 documents package:ext)

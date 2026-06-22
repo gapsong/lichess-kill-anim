@@ -3706,14 +3706,19 @@
       intensity = 7,
       // 1..10
       soundOn = true,
-      buildupMs = 0
+      buildupMs = 0,
       // 0 = instant impact; >0 = crosshair buildup before impact
+      routing = null,
+      // map attacker piece -> effect; null = built-in SIG
+      fallback = "splatter"
     } = {}) {
       this.onImpact = onImpact;
       this.mode = mode;
       this.intensity = Math.max(1, Math.min(10, intensity));
       this.soundOn = soundOn;
       this.buildupMs = buildupMs;
+      this.routing = routing;
+      this.fallback = fallback;
       this.pending = [];
       this.particles = [];
       this._k = 1;
@@ -3790,7 +3795,8 @@
       const victim = re.victim || {};
       const attacker = re.attacker || {};
       if (victim.piece === "k") return "ascension";
-      return SIG[attacker.piece] || "splatter";
+      const map = this.routing || SIG;
+      return map[attacker.piece] || this.fallback || "splatter";
     }
     /* ---------- helpers ---------- */
     rand(a, b) {
@@ -4493,6 +4499,66 @@
     return parts.slice(0, 6).join(" ");
   }
 
+  // src/packs.js
+  var EFFECTS = [
+    "nuke",
+    "smash",
+    "slash",
+    "zap",
+    "pixel",
+    "ascension",
+    "splatter",
+    "inferno",
+    "vortex",
+    "shatter"
+  ];
+  var EFFECT_LABELS = {
+    nuke: "Nuke",
+    smash: "Smash",
+    slash: "Slash",
+    zap: "Zap",
+    pixel: "Pixel",
+    ascension: "Ascension",
+    splatter: "Splatter",
+    inferno: "Inferno",
+    vortex: "Vortex",
+    shatter: "Shatter"
+  };
+  var PACKS = [
+    { id: "signature", label: "Signature", kind: "signature" },
+    ...EFFECTS.map((effect) => ({ id: effect, label: EFFECT_LABELS[effect], kind: "single", effect })),
+    {
+      id: "void",
+      label: "Void",
+      kind: "theme",
+      routing: { q: "nuke", r: "vortex", b: "zap", n: "slash", p: "shatter", k: "ascension" },
+      fallback: "vortex"
+    },
+    {
+      id: "fire",
+      label: "Fire",
+      kind: "theme",
+      routing: { q: "inferno", r: "smash", b: "inferno", n: "slash", p: "pixel", k: "ascension" },
+      fallback: "inferno"
+    },
+    {
+      id: "arcade",
+      label: "Arcade",
+      kind: "theme",
+      routing: { q: "pixel", r: "smash", b: "zap", n: "pixel", p: "pixel", k: "ascension" },
+      fallback: "pixel"
+    }
+  ];
+  function getPack(id) {
+    return PACKS.find((p) => p.id === id) || null;
+  }
+  function resolvePack(packId) {
+    const pack = getPack(packId) || getPack("signature");
+    if (pack.kind === "single") return { mode: pack.effect, routing: null, fallback: "splatter" };
+    if (pack.kind === "theme") return { mode: "signature", routing: pack.routing, fallback: pack.fallback };
+    return { mode: "signature", routing: null, fallback: "splatter" };
+  }
+
   // src/runtime.js
   var PIECE_NAMES = { p: "Bauer", n: "Springer", b: "L\xE4ufer", r: "Turm", q: "Dame", k: "K\xF6nig" };
   function domToast(doc, text) {
@@ -4544,8 +4610,11 @@
       currentContext = state.context;
       currentSize = state.size;
       if (!renderer) {
+        const packConfig = resolvePack(settings.packId);
         renderer = createRenderer({
-          mode: settings.mode,
+          mode: packConfig.mode,
+          routing: packConfig.routing,
+          fallback: packConfig.fallback,
           intensity: settings.intensity,
           soundOn: settings.soundOn,
           buildupMs: settings.buildupMs,
@@ -4605,7 +4674,10 @@
       Object.assign(settings, partial);
       if (partial && Array.isArray(partial.shakePieces)) settings.shakePieces = [...partial.shakePieces];
       if (renderer) {
-        renderer.mode = settings.mode;
+        const packConfig = resolvePack(settings.packId);
+        renderer.mode = packConfig.mode;
+        renderer.routing = packConfig.routing;
+        renderer.fallback = packConfig.fallback;
         renderer.intensity = Math.max(1, Math.min(10, settings.intensity));
         renderer.soundOn = settings.soundOn;
         renderer.buildupMs = settings.buildupMs;
@@ -4637,7 +4709,7 @@
   // src/settings.js
   var DEFAULT_SETTINGS = {
     enabled: true,
-    mode: "signature",
+    packId: "signature",
     intensity: 7,
     soundOn: true,
     buildupMs: 0,
