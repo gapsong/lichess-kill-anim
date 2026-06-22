@@ -75,3 +75,24 @@ test('buildupMs default is 0 so impact stays instant', () => {
   r.play(reFor('q', 'p'));
   assert.equal(impacts, 1);
 });
+
+test('routing override maps attacker pieces to themed effects', () => {
+  const r = new ParticleFxRenderer({ soundOn: false, routing: { q: 'inferno', r: 'vortex' }, fallback: 'shatter' });
+  assert.equal(r.effectFor({ attacker: { piece: 'q' }, victim: { piece: 'p' } }), 'inferno');
+  assert.equal(r.effectFor({ attacker: { piece: 'r' }, victim: { piece: 'p' } }), 'vortex');
+});
+
+test('routing override falls back to configured fallback for unmapped pieces', () => {
+  const r = new ParticleFxRenderer({ soundOn: false, routing: { q: 'inferno' }, fallback: 'shatter' });
+  assert.equal(r.effectFor({ attacker: { piece: 'b' }, victim: { piece: 'p' } }), 'shatter');
+});
+
+test('captured king still wins over routing', () => {
+  const r = new ParticleFxRenderer({ soundOn: false, routing: { q: 'inferno' }, fallback: 'shatter' });
+  assert.equal(r.effectFor({ attacker: { piece: 'q' }, victim: { piece: 'k' } }), 'ascension');
+});
+
+test('default routing (null) keeps the built-in SIG table', () => {
+  const r = new ParticleFxRenderer({ soundOn: false });
+  assert.equal(r.effectFor({ attacker: { piece: 'q' }, victim: { piece: 'p' } }), 'nuke');
+});
