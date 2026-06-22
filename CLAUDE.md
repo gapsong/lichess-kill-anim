@@ -48,19 +48,23 @@ Der aktuelle Stand ist ein gebundeltes Ein-Datei-Userscript: `chess.js` wird per
 
 ### Partikel-Engine (`ParticleFxRenderer`)
 
-Einstieg in `src/userscript-entry.js` mit diesen Konfigurations-Konstanten:
+Konfiguration lebt zentral in `src/settings.js` (`DEFAULT_SETTINGS`); beide Einstiege (`userscript-entry.js`, `extension-entry.js`) starten die Runtime damit:
 
 ```js
-const RENDER_MODE = 'signature'; // 'signature' | 'random' | feste id wie 'nuke'
-const INTENSITY   = 7;           // 1..10
-const SOUND_ON    = true;        // WebAudio-Synth-SFX
-const BUILDUP_MS  = 680;         // Targeting-Buildup vor Impact (0 = sofort)
+DEFAULT_SETTINGS = {
+  enabled: true,
+  packId: 'signature',   // gewaehlte Animation (Registry: src/packs.js)
+  intensity: 7,          // 1..10
+  soundOn: true,         // WebAudio-Synth-SFX
+  buildupMs: 0,          // Targeting-Buildup vor Impact (0 = sofort)
+  shakePieces: ['q']     // Board-Shake nur bei diesen Angreifer-Figuren
+};
 ```
 
 Oeffentliches API von `ParticleFxRenderer`:
 
 ```js
-const r = new ParticleFxRenderer({ mode, intensity, soundOn, buildupMs, onImpact });
+const r = new ParticleFxRenderer({ mode, intensity, soundOn, buildupMs, routing, fallback, onImpact });
 r.play(renderEvent, nowMs?);  // Effekt starten (gibt false zurueck wenn kein victim.at)
 r.tick(nowMs, ctx, size);     // Partikel weiterrechnen + zeichnen (board-lokale px)
 r.activeCount;                // > 0 => rAF-Loop weiter laufen lassen
@@ -81,8 +85,8 @@ r.onImpact;                   // Callback(renderEvent, { amplitude, durationMs }
 
 Zusaetzliche Effekte im Pool (erreichbar ueber `mode: 'random'` oder fixe id): `inferno`, `vortex`, `shatter`.
 
-Bei `mode: 'signature'` wird der Angreifer via `SIG`-Konstante geroutet; Opfer `k` hat Vorrang und liefert immer `ascension`.
-Bei `buildupMs > 0` (Default 680 ms im Userscript) erscheint zuerst ein Targeting-Reticle auf dem Opfer-Feld; nach Ablauf der Buildup-Zeit wird `fireImpact` aufgerufen und `onImpact` gefeuert (Board-Shake).
+Bei `routing === null` (Default) wird der Angreifer via `SIG`-Konstante geroutet; Opfer `k` hat Vorrang und liefert immer `ascension`. Die waehlbare Animation steuert `packId` (Registry `src/packs.js`, aufgeloest via `resolvePack`): `single` setzt `mode` auf einen festen Effekt, `theme` setzt `routing`/`fallback`.
+Bei `buildupMs > 0` erscheint zuerst ein Targeting-Reticle auf dem Opfer-Feld; nach Ablauf der Buildup-Zeit wird `fireImpact` aufgerufen und `onImpact` gefeuert (Board-Shake). Default `buildupMs` ist 0.
 
 ### Tester
 
@@ -184,7 +188,7 @@ Bei En Passant ist `capturedAt` nicht gleich `to`; Animationen sollen auf `captu
 
 - `node:test` als Test Runner
 - `jsdom` fuer DOM-nahe MoveFeed-Tests
-- 72 Tests insgesamt
+- 104 Tests insgesamt
 
 Abgedeckt:
 - Routing aller Figuren zu korrekten Partikel-Effekten (SIG-Tabelle)
