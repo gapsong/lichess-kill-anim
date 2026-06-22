@@ -5,6 +5,9 @@ import { createRenderEvent } from './render-event.js';
 import { ParticleFxRenderer } from './particle-fx-renderer.js';
 import { readSnapshot } from './move-feed.js';
 import { resolvePack } from './packs.js';
+import { derivePosition } from './chess-state.js';
+import { detectPatterns } from './patterns.js';
+import { PatternOverlay } from './pattern-overlay.js';
 
 const PIECE_NAMES = { p: 'Bauer', n: 'Springer', b: 'Läufer', r: 'Turm', q: 'Dame', k: 'König' };
 
@@ -35,6 +38,9 @@ export function createRuntime({
   doc = (typeof document !== 'undefined' ? document : null),
   loc = (typeof location !== 'undefined' ? location : null),
   observerFactory = (cb) => new MutationObserver(cb),
+  patternOverlay = new PatternOverlay(),
+  derivePositionFn = derivePosition,
+  detectPatternsFn = detectPatterns,
   notify
 } = {}) {
   const settings = { ...config, shakePieces: [...(config?.shakePieces ?? [])] };
@@ -44,6 +50,8 @@ export function createRuntime({
   let currentContext = null;
   let currentSize = 0;
   let observer = null;
+  let lastPatternSig = null;
+  let lastSnapshot = null;
 
   function ensureRenderer() {
     overlay.attach();
@@ -101,10 +109,35 @@ export function createRuntime({
     if (renderer?.activeCount) frameRequest = schedule(frame);
   }
 
+  function patternSig(snapshot) {
+    if (!snapshot) return null;
+    const moves = snapshot.sanMoves || [];
+    return `${snapshot.id}|${moves.length}|${moves[moves.length - 1] || ''}`;
+  }
+
+  function renderPatterns(snapshot, force) {
+    if (!settings.patternsOn) {
+      patternOverlay.clear();
+      lastPatternSig = null;
+      return;
+    }
+    const sig = patternSig(snapshot);
+    if (!force && sig === lastPatternSig) return;
+    lastPatternSig = sig;
+    if (!snapshot) {
+      patternOverlay.clear();
+      return;
+    }
+    const { board } = derivePositionFn(snapshot);
+    patternOverlay.render(detectPatternsFn(board));
+  }
+
   function scan() {
     const snapshot = readSnapshotFn(doc, loc);
+    lastSnapshot = snapshot;
     const events = stream.next(snapshot);
     events.forEach((event) => renderCapture(event, snapshot?.id));
+    renderPatterns(snapshot, false);
   }
 
   function start() {
@@ -126,6 +159,9 @@ export function createRuntime({
       renderer.intensity = Math.max(1, Math.min(10, settings.intensity));
       renderer.soundOn = settings.soundOn;
       renderer.buildupMs = settings.buildupMs;
+    }
+    if (partial && 'patternsOn' in partial) {
+      renderPatterns(lastSnapshot, true);
     }
   }
 

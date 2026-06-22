@@ -33,6 +33,9 @@ Der aktuelle Stand ist ein gebundeltes Ein-Datei-Userscript: `chess.js` wird per
 - `src/particle-fx-renderer.js`: Live-Partikel-Engine; zeichnet alle Effekte direkt per Canvas-API (kein Spritesheet); unterstuetzt `buildupMs`-Crosshair vor Impact
 - `src/board-shake.js`: abklingender Screen-Shake auf `cg-board` (Vlambeer-Style), getriggert via `onImpact`
 - `src/userscript-entry.js`: Tampermonkey-Einstieg, Toasts und Canvas-Renderer
+- `src/patterns.js`: erkennt statische Formationen (`detectPatterns(board)` → battery/rooks/pin/skewer/fianchetto/outpost/passed-pawn)
+- `src/pattern-overlay.js`: persistente zweite Canvas-Schicht, zeichnet erkannte Muster (Linie + Glow + Label); Toggle `patternsOn`
+- `src/chess-state.js`: zusätzlich `derivePosition(snapshot)` → Endstellung (`chess.board()`) für die Muster-Erkennung
 
 ### Build-Scripts
 
