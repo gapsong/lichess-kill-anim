@@ -9,6 +9,13 @@ const banner = document.getElementById('banner');
 
 let installed = false;
 
+let bannerRestoreTimer = null;
+function showTransientError(message) {
+  banner.textContent = message;
+  if (bannerRestoreTimer) clearTimeout(bannerRestoreTimer);
+  bannerRestoreTimer = setTimeout(() => renderBanner(installed), 3000);
+}
+
 function makeCard(pack) {
   const card = document.createElement('div');
   card.className = 'card';
@@ -33,7 +40,7 @@ function makeCard(pack) {
       document.querySelectorAll('.card.active').forEach((c) => c.classList.remove('active'));
       card.classList.add('active');
     } else {
-      renderBanner(false);
+      showTransientError('Couldn\'t apply — is the extension still enabled?');
     }
   });
   row.append(label, btn);
