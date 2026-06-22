@@ -65,3 +65,9 @@ test('not a passed pawn when an enemy pawn blocks the file', () => {
   const p = patterns('6k1/8/4p3/4P3/8/8/8/6K1 w - - 0 1');
   assert.ok(!has(p, 'passed-pawn', 'w'));
 });
+
+test('a pawn blocked by its own pawn ahead is not a passed pawn', () => {
+  const passers = patterns('6k1/8/4P3/4P3/8/8/8/6K1 w - - 0 1').filter((x) => x.type === 'passed-pawn');
+  assert.ok(passers.some((x) => x.squares.includes('e6'))); // front pawn still passes
+  assert.ok(!passers.some((x) => x.squares.includes('e5'))); // back pawn blocked by own e6
+});

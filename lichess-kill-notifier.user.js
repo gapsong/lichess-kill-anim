@@ -4652,7 +4652,9 @@
         for (const af of [f - 1, f, f + 1]) {
           if (af < 0 || af > 7) continue;
           for (let rr = r + fwd; rr >= 1 && rr <= 8; rr += fwd) {
-            if (isPawnOf(pieceAt(at, af, rr), enemy)) blocked = true;
+            const ahead = pieceAt(at, af, rr);
+            if (isPawnOf(ahead, enemy)) blocked = true;
+            if (af === f && isPawnOf(ahead, c)) blocked = true;
           }
         }
         if (!blocked) out.push({ type: "passed-pawn", side: c, squares: [toSquare(f, r)], line: null, label: "Freibauer" });
