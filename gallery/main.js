@@ -1,5 +1,6 @@
 import { PACKS } from '../src/packs.js';
 import { startPreview } from './preview.js';
+import { startPatternPreview } from './pattern-preview.js';
 import { pingExtension, applyPack } from './extension-bridge.js';
 
 const PREVIEW_PX = 200;
@@ -16,6 +17,17 @@ const GROUPS = [
     desc: 'A curated set where every piece still has its own effect, but they are chosen to share one coordinated look.' },
   { title: 'Effects', match: (p) => p.kind === 'single',
     desc: 'Force one single effect for every capture, no matter which piece moves.' }
+];
+
+// Example positions for the pattern-detection showcase (each holds one pattern).
+const PATTERN_EXAMPLES = [
+  { label: 'Battery', fen: '6k1/8/8/8/8/3R4/8/3Q2K1 w - - 0 1' },
+  { label: 'Doubled rooks', fen: '6k1/8/8/8/8/3R4/8/3R2K1 w - - 0 1' },
+  { label: 'Pin', fen: '6k1/8/4n3/8/8/8/B7/6K1 w - - 0 1' },
+  { label: 'Skewer', fen: 'k5r1/8/4q3/8/8/8/B7/6K1 w - - 0 1' },
+  { label: 'Fianchetto', fen: '6k1/8/8/8/8/6P1/5PBP/6K1 w - - 0 1' },
+  { label: 'Outpost', fen: '6k1/8/8/3N4/4P3/8/8/6K1 w - - 0 1' },
+  { label: 'Passed pawn', fen: '6k1/8/8/4P3/8/8/8/6K1 w - - 0 1' }
 ];
 
 let installed = false;
@@ -100,8 +112,41 @@ function showTransientError(message) {
   restoreTimer = setTimeout(() => renderStatus(installed), 3000);
 }
 
+function renderPatternSection() {
+  const section = document.createElement('section');
+  const heading = document.createElement('h2');
+  heading.className = 'section-title';
+  heading.textContent = 'Pattern hints';
+  const desc = document.createElement('p');
+  desc.className = 'section-desc';
+  desc.textContent = 'On the board, the extension highlights tactical and positional formations. Green = your side, red = the opponent. Toggle it in the popup.';
+  const grid = document.createElement('div');
+  grid.className = 'grid';
+  section.append(heading, desc, grid);
+  content.appendChild(section);
+
+  for (const example of PATTERN_EXAMPLES) {
+    const card = document.createElement('div');
+    card.className = 'card';
+    const canvas = document.createElement('canvas');
+    canvas.width = PREVIEW_PX;
+    canvas.height = PREVIEW_PX;
+    card.appendChild(canvas);
+    const meta = document.createElement('div');
+    meta.className = 'meta';
+    const name = document.createElement('span');
+    name.className = 'name';
+    name.textContent = example.label;
+    meta.appendChild(name);
+    card.appendChild(meta);
+    grid.appendChild(card);
+    startPatternPreview(canvas, example.fen);
+  }
+}
+
 async function init() {
   renderSections();
+  renderPatternSection();
   renderStatus(false);
   renderStatus(await pingExtension());
 }
