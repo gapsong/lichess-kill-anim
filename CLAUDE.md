@@ -38,6 +38,12 @@ Der aktuelle Stand ist ein gebundeltes Ein-Datei-Userscript: `chess.js` wird per
 
 - `scripts/build-userscript.mjs`: baut die installierbare Datei via esbuild
 
+### Extension + Gallery (Pack-System)
+
+- `src/packs.js`: Registry aller wählbaren Animationen (signature/single/theme); `resolvePack(id)` → `{mode,routing,fallback}`
+- `gallery/`: statische Galerie-Website (Live-Previews via Engine); Build `npm run build:gallery` → `dist/gallery/`
+- `src/background-entry.js` + `src/background-message.js`: MV3-Service-Worker; empfängt die Pack-Auswahl der Galerie via `externally_connectable` und schreibt `chrome.storage`
+
 ## Animation-System
 
 ### Partikel-Engine (`ParticleFxRenderer`)
