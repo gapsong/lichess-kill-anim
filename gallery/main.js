@@ -1,6 +1,6 @@
 import { PACKS } from '../src/packs.js';
 import { startPreview } from './preview.js';
-import { startPatternPreview } from './pattern-preview.js';
+import { startPatternPreview, PATTERN_THEMES } from './pattern-preview.js';
 import { pingExtension, applyPack } from './extension-bridge.js';
 
 const PREVIEW_PX = 200;
@@ -8,6 +8,24 @@ const STORE_URL = 'https://chrome.google.com/webstore/'; // konkrete Listing-URL
 
 const content = document.getElementById('content');
 const status = document.getElementById('status');
+
+// Only animate previews that are on-screen — keeps the framerate up with many cards.
+const animated = [];
+const visibilityObserver = new IntersectionObserver((entries) => {
+  for (const entry of entries) {
+    const rec = animated.find((a) => a.canvas === entry.target);
+    if (!rec) continue;
+    if (entry.isIntersecting && !rec.stop) rec.stop = rec.make();
+    else if (!entry.isIntersecting && rec.stop) { rec.stop(); rec.stop = null; }
+  }
+}, { rootMargin: '150px' });
+
+function registerAnimated(canvas, make) {
+  const rec = { canvas, make, stop: null };
+  animated.push(rec);
+  visibilityObserver.observe(canvas);
+  return rec;
+}
 
 // Display groups, in order. Each pack lands in the first group it matches.
 const GROUPS = [
@@ -21,13 +39,18 @@ const GROUPS = [
 
 // Example positions for the pattern-detection showcase (each holds one pattern).
 const PATTERN_EXAMPLES = [
-  { label: 'Battery', fen: '6k1/8/8/8/8/3R4/8/3Q2K1 w - - 0 1' },
-  { label: 'Doubled rooks', fen: '6k1/8/8/8/8/3R4/8/3R2K1 w - - 0 1' },
+  { label: 'Battery', fen: '6k1/8/8/3p4/3P4/3R4/8/3Q2K1 w - - 0 1' },
+  { label: 'Doubled rooks', fen: '6k1/8/8/3p4/3P4/3R4/8/3R2K1 w - - 0 1' },
   { label: 'Pin', fen: '6k1/8/4n3/8/8/8/B7/6K1 w - - 0 1' },
-  { label: 'Skewer', fen: 'k5r1/8/4q3/8/8/8/B7/6K1 w - - 0 1' },
-  { label: 'Fianchetto', fen: '6k1/8/8/8/8/6P1/5PBP/6K1 w - - 0 1' },
-  { label: 'Outpost', fen: '6k1/8/8/3N4/4P3/8/8/6K1 w - - 0 1' },
-  { label: 'Passed pawn', fen: '6k1/8/8/4P3/8/8/8/6K1 w - - 0 1' }
+  { label: 'Skewer', fen: 'k5r1/6p1/4q1P1/8/8/8/B7/6K1 w - - 0 1' },
+  { label: 'Fianchetto', fen: '4k3/8/8/6p1/8/6P1/5PBP/6K1 w - - 0 1' },
+  { label: 'Outpost', fen: '6k1/8/5p2/3N4/4P3/8/8/6K1 w - - 0 1' },
+  { label: 'Passed pawn', fen: '6k1/8/8/4P3/8/8/8/6K1 w - - 0 1' },
+  { label: 'Pawn chain', fen: '6k1/8/4p3/2p1P3/3P4/2P5/1P6/6K1 w - - 0 1' },
+  { label: 'Hotspot', fen: '6k1/8/8/4q3/2N3N1/8/1B5B/6K1 w - - 0 1' },
+  { label: 'Open file', fen: '6k1/8/8/8/8/8/8/4R1K1 w - - 0 1' },
+  { label: 'Fortress', fen: '6k1/5ppp/8/8/8/8/5PPP/6K1 w - - 0 1' },
+  { label: 'Fork', fen: 'k7/2q1b3/8/3N4/8/8/8/6K1 w - - 0 1' }
 ];
 
 let installed = false;
@@ -68,10 +91,10 @@ function makeCard(pack, grid) {
   card.appendChild(meta);
 
   grid.appendChild(card);
-  startPreview(canvas, pack.id);
+  registerAnimated(canvas, () => startPreview(canvas, pack.id));
 }
 
-function renderSections() {
+function renderPackGroups(panel) {
   for (const group of GROUPS) {
     const packs = PACKS.filter(group.match);
     if (!packs.length) continue;
@@ -85,7 +108,7 @@ function renderSections() {
     const grid = document.createElement('div');
     grid.className = 'grid';
     section.append(heading, desc, grid);
-    content.appendChild(section);
+    panel.appendChild(section);
     packs.forEach((pack) => makeCard(pack, grid));
   }
 }
@@ -112,18 +135,58 @@ function showTransientError(message) {
   restoreTimer = setTimeout(() => renderStatus(installed), 3000);
 }
 
-function renderPatternSection() {
+function renderPatternSection(panel) {
   const section = document.createElement('section');
   const heading = document.createElement('h2');
   heading.className = 'section-title';
   heading.textContent = 'Pattern hints';
   const desc = document.createElement('p');
   desc.className = 'section-desc';
-  desc.textContent = 'On the board, the extension highlights tactical and positional formations. Green = your side, red = the opponent. Toggle it in the popup.';
+  desc.textContent = 'On the board, the extension highlights tactical and positional formations. Green = your side, red = the opponent. Pick a theme to restyle the effects.';
+
+  const themesRow = document.createElement('div');
+  Object.assign(themesRow.style, { display: 'flex', gap: '8px', flexWrap: 'wrap', margin: '2px 2px 18px' });
+
   const grid = document.createElement('div');
   grid.className = 'grid';
-  section.append(heading, desc, grid);
-  content.appendChild(section);
+  section.append(heading, desc, themesRow, grid);
+  panel.appendChild(section);
+
+  const chips = [];
+  const patternRecs = [];
+  let patternTheme = PATTERN_THEMES[0];
+
+  function updateChips(active) {
+    chips.forEach((chip) => {
+      const on = chip._theme === active;
+      Object.assign(chip.style, {
+        background: on ? chip._theme.own : 'transparent',
+        color: on ? '#15121f' : 'var(--muted)',
+        borderColor: on ? chip._theme.own : 'var(--line)'
+      });
+    });
+  }
+
+  function applyTheme(theme) {
+    patternTheme = theme;
+    // restart only the on-screen cards with the new theme; off-screen ones pick it up when shown
+    patternRecs.forEach((rec) => { if (rec.stop) { rec.stop(); rec.stop = rec.make(); } });
+    updateChips(theme);
+  }
+
+  PATTERN_THEMES.forEach((theme) => {
+    const chip = document.createElement('button');
+    chip._theme = theme;
+    chip.textContent = theme.label;
+    Object.assign(chip.style, {
+      font: 'inherit', fontSize: '12px', fontWeight: '600',
+      padding: '6px 13px', borderRadius: '999px', cursor: 'pointer',
+      border: '1px solid var(--line)', transition: 'background .15s ease, color .15s ease, border-color .15s ease'
+    });
+    chip.addEventListener('click', () => applyTheme(theme));
+    chips.push(chip);
+    themesRow.appendChild(chip);
+  });
 
   for (const example of PATTERN_EXAMPLES) {
     const card = document.createElement('div');
@@ -140,13 +203,15 @@ function renderPatternSection() {
     meta.appendChild(name);
     card.appendChild(meta);
     grid.appendChild(card);
-    startPatternPreview(canvas, example.fen);
+    patternRecs.push(registerAnimated(canvas, () => startPatternPreview(canvas, example.fen, patternTheme)));
   }
+
+  updateChips(patternTheme);
 }
 
 async function init() {
-  renderSections();
-  renderPatternSection();
+  renderPackGroups(content);
+  renderPatternSection(content);
   renderStatus(false);
   renderStatus(await pingExtension());
 }

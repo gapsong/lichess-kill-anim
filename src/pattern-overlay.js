@@ -1,4 +1,4 @@
-import { boardLocalSquareCenter } from './board-geometry.js';
+import { drawPatternFx, PATTERN_THEMES } from './pattern-art.js';
 
 const GREEN = '#3bd17a';
 const RED = '#e5564b';
@@ -13,15 +13,20 @@ export class PatternOverlay {
     document = globalThis.document,
     devicePixelRatio = globalThis.devicePixelRatio ?? 1,
     ResizeObserver = globalThis.ResizeObserver,
-    getContext = (canvas) => canvas.getContext?.('2d')
+    getContext = (canvas) => canvas.getContext?.('2d'),
+    theme = PATTERN_THEMES[0]
   } = {}) {
     this.document = document;
     this.devicePixelRatio = devicePixelRatio;
     this.ResizeObserver = ResizeObserver;
     this.getContext = getContext;
+    this.theme = theme;
     this.canvas = null;
     this.board = null;
     this.resizeObserver = null;
+    this.patterns = [];
+    this.raf = null;
+    this.last = 0;
   }
 
   attach() {
@@ -56,72 +61,50 @@ export class PatternOverlay {
     return { context, size, isBlackOrientation };
   }
 
+  // Persist the current patterns and animate them on the overlay until they
+  // change or the overlay is cleared. Called on each position change.
   render(patterns) {
+    this.patterns = patterns || [];
     if (!this.canvas) this.attach();
-    const state = this.sync();
-    if (!state || !state.context) return;
-    const { context, size, isBlackOrientation } = state;
-    context.clearRect(0, 0, size, size);
-    for (const pattern of patterns) this._draw(pattern, context, size, isBlackOrientation);
+    if (this.patterns.length === 0) {
+      this._stop();
+      this.clear();
+      return;
+    }
+    this._start();
   }
 
   clear() {
+    this._stop();
     const state = this.sync();
     if (state?.context) state.context.clearRect(0, 0, state.size, state.size);
   }
 
-  _draw(pattern, ctx, size, isBlackOrientation) {
-    const color = patternColor(pattern.side, isBlackOrientation);
-    const sq = size / 8;
-    const center = (square) => boardLocalSquareCenter(square, size, isBlackOrientation);
+  _start() {
+    if (this.raf != null) return;
+    const raf = globalThis.requestAnimationFrame;
+    if (!raf) { this._frame(0); return; }
+    const tick = (now) => {
+      this.raf = raf(tick);
+      if (now - this.last < 32) return; // cap to ~30fps
+      this.last = now;
+      this._frame(now);
+    };
+    this.raf = raf(tick);
+  }
 
-    // glow ring on each involved square
-    for (const square of pattern.squares) {
-      const { x, y } = center(square);
-      ctx.save();
-      ctx.globalAlpha = 0.85;
-      ctx.strokeStyle = color;
-      ctx.lineWidth = Math.max(2, sq * 0.06);
-      ctx.shadowColor = color;
-      ctx.shadowBlur = sq * 0.35;
-      const inset = sq * 0.12;
-      ctx.strokeRect(x - sq / 2 + inset, y - sq / 2 + inset, sq - inset * 2, sq - inset * 2);
-      ctx.restore();
+  _stop() {
+    if (this.raf != null && globalThis.cancelAnimationFrame) globalThis.cancelAnimationFrame(this.raf);
+    this.raf = null;
+  }
+
+  _frame(now) {
+    const state = this.sync();
+    if (!state || !state.context) return;
+    const { context, size, isBlackOrientation } = state;
+    context.clearRect(0, 0, size, size);
+    for (const pattern of this.patterns) {
+      drawPatternFx(context, size, pattern, now, this.theme, isBlackOrientation);
     }
-
-    // axis line
-    if (pattern.line) {
-      const a = center(pattern.line.from);
-      const b = center(pattern.line.to);
-      ctx.save();
-      ctx.globalAlpha = 0.55;
-      ctx.strokeStyle = color;
-      ctx.lineWidth = Math.max(2, sq * 0.05);
-      ctx.lineCap = 'round';
-      ctx.beginPath();
-      ctx.moveTo(a.x, a.y);
-      ctx.lineTo(b.x, b.y);
-      ctx.stroke();
-      ctx.restore();
-    }
-
-    // label near the first square
-    const key = center(pattern.squares[0]);
-    const fontPx = Math.max(9, Math.round(sq * 0.22));
-    ctx.save();
-    ctx.font = `600 ${fontPx}px 'Space Grotesk', system-ui, sans-serif`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    const text = pattern.label;
-    const w = ctx.measureText(text).width + fontPx * 0.7;
-    const h = fontPx * 1.5;
-    const ly = key.y - sq * 0.42;
-    ctx.fillStyle = 'rgba(20,18,28,0.85)';
-    ctx.beginPath();
-    ctx.roundRect(key.x - w / 2, ly - h / 2, w, h, h / 2);
-    ctx.fill();
-    ctx.fillStyle = color;
-    ctx.fillText(text, key.x, ly);
-    ctx.restore();
   }
 }
