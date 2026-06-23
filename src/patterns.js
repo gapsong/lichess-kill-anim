@@ -122,6 +122,37 @@ function firstHit(at, f, r, d) {
 
 const ALL_DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
 const ORTHO_DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+const DIAG_DIRS = [[1, 1], [1, -1], [-1, 1], [-1, -1]];
+const KNIGHT_HOPS = [[1, 2], [2, 1], [2, -1], [1, -2], [-1, -2], [-2, -1], [-2, 1], [-1, 2]];
+
+// Squares the piece on (f,r) attacks (sliders stop at the first occupied square,
+// which is itself attacked). Returns an array of [file, rank].
+function attackSquares(at, f, r) {
+  const p = pieceAt(at, f, r);
+  if (!p) return [];
+  const out = [];
+  const onBoard = (nf, nr) => nf >= 0 && nf < 8 && nr >= 1 && nr <= 8;
+  if (p.type === 'n') {
+    for (const [df, dr] of KNIGHT_HOPS) if (onBoard(f + df, r + dr)) out.push([f + df, r + dr]);
+  } else if (p.type === 'k') {
+    for (const [df, dr] of ALL_DIRS) if (onBoard(f + df, r + dr)) out.push([f + df, r + dr]);
+  } else if (p.type === 'p') {
+    const fwd = p.color === 'w' ? 1 : -1;
+    if (onBoard(f - 1, r + fwd)) out.push([f - 1, r + fwd]);
+    if (onBoard(f + 1, r + fwd)) out.push([f + 1, r + fwd]);
+  } else {
+    const dirs = p.type === 'r' ? ORTHO_DIRS : p.type === 'b' ? DIAG_DIRS : ALL_DIRS;
+    for (const [df, dr] of dirs) {
+      let nf = f + df, nr = r + dr;
+      while (onBoard(nf, nr)) {
+        out.push([nf, nr]);
+        if (pieceAt(at, nf, nr)) break;
+        nf += df; nr += dr;
+      }
+    }
+  }
+  return out;
+}
 
 function detectBatteries(at) {
   const out = [];
@@ -200,6 +231,122 @@ function detectPinsAndSkewers(at) {
   return out;
 }
 
+// A pawn chain is a straight diagonal run of >= 3 same-colour pawns, each
+// defending the next (e.g. b2-c3-d4-e5). A defended pawn in a "V" (two pawns
+// supporting one) is NOT a chain — it must be a single diagonal line.
+function detectPawnChains(at) {
+  const out = [];
+  for (const c of ['w', 'b']) {
+    const fwd = c === 'w' ? 1 : -1;
+    for (const df of [-1, 1]) {
+      for (let f = 0; f < 8; f++) {
+        for (let r = 1; r <= 8; r++) {
+          if (!isPawnOf(pieceAt(at, f, r), c)) continue;
+          // only start at the base of a run (no same-colour pawn behind on this diagonal)
+          if (isPawnOf(pieceAt(at, f - df, r - fwd), c)) continue;
+          const squares = [];
+          let nf = f, nr = r;
+          while (isPawnOf(pieceAt(at, nf, nr), c)) {
+            squares.push(toSquare(nf, nr)); // walking forward gives base -> tip order
+            nf += df;
+            nr += fwd;
+          }
+          if (squares.length >= 3) {
+            out.push({ type: 'pawn-chain', side: c, squares, line: null, label: 'Bauernkette' });
+          }
+        }
+      }
+    }
+  }
+  return out;
+}
+
+const HOTSPOT_MIN = 4;
+
+function detectHotspots(at) {
+  const out = [];
+  const map = {};
+  for (let f = 0; f < 8; f++) {
+    for (let r = 1; r <= 8; r++) {
+      const p = pieceAt(at, f, r);
+      if (!p) continue;
+      for (const [nf, nr] of attackSquares(at, f, r)) {
+        const k = `${nf},${nr}`;
+        (map[k] || (map[k] = { w: [], b: [] }))[p.color].push(toSquare(f, r));
+      }
+    }
+  }
+  for (const k of Object.keys(map)) {
+    for (const color of ['w', 'b']) {
+      const attackers = map[k][color];
+      if (attackers.length >= HOTSPOT_MIN) {
+        const [tf, tr] = k.split(',').map(Number);
+        out.push({ type: 'hotspot', side: color, squares: [toSquare(tf, tr), ...attackers], line: null, label: 'Brennpunkt' });
+      }
+    }
+  }
+  return out;
+}
+
+function detectOpenFileRooks(at) {
+  const out = [];
+  for (let f = 0; f < 8; f++) {
+    let pawn = false;
+    for (let r = 1; r <= 8; r++) {
+      const p = pieceAt(at, f, r);
+      if (p && p.type === 'p') { pawn = true; break; }
+    }
+    if (pawn) continue;
+    for (let r = 1; r <= 8; r++) {
+      const p = pieceAt(at, f, r);
+      if (p && p.type === 'r') {
+        const endR = p.color === 'w' ? 8 : 1;
+        out.push({ type: 'open-file', side: p.color, squares: [toSquare(f, r)], line: { from: toSquare(f, r), to: toSquare(f, endR) }, label: 'Offene Linie' });
+      }
+    }
+  }
+  return out;
+}
+
+const FORTRESS = [
+  { king: 'g1', pawns: ['f2', 'g2', 'h2'], color: 'w' },
+  { king: 'c1', pawns: ['b2', 'c2', 'd2'], color: 'w' },
+  { king: 'g8', pawns: ['f7', 'g7', 'h7'], color: 'b' },
+  { king: 'c8', pawns: ['b7', 'c7', 'd7'], color: 'b' }
+];
+
+function detectKingFortress(at) {
+  const out = [];
+  for (const fort of FORTRESS) {
+    const k = pieceAtSquare(at, fort.king);
+    if (!k || k.type !== 'k' || k.color !== fort.color) continue;
+    if (!fort.pawns.every((sq) => isPawnOf(pieceAtSquare(at, sq), fort.color))) continue;
+    out.push({ type: 'fortress', side: fort.color, squares: [fort.king, ...fort.pawns], line: null, label: 'Festung' });
+  }
+  return out;
+}
+
+function detectForks(at) {
+  const out = [];
+  for (let f = 0; f < 8; f++) {
+    for (let r = 1; r <= 8; r++) {
+      const p = pieceAt(at, f, r);
+      if (!p) continue;
+      const myVal = VALUE[p.type];
+      const enemy = p.color === 'w' ? 'b' : 'w';
+      const targets = [];
+      for (const [nf, nr] of attackSquares(at, f, r)) {
+        const q = pieceAt(at, nf, nr);
+        if (q && q.color === enemy && VALUE[q.type] >= myVal) targets.push(toSquare(nf, nr));
+      }
+      if (targets.length >= 2) {
+        out.push({ type: 'fork', side: p.color, squares: [toSquare(f, r), ...targets], line: null, label: 'Gabel' });
+      }
+    }
+  }
+  return out;
+}
+
 export function detectPatterns(board) {
   const at = indexBoard(board);
   return [
@@ -208,6 +355,11 @@ export function detectPatterns(board) {
     ...detectPinsAndSkewers(at),
     ...detectFianchetto(at),
     ...detectOutposts(at),
-    ...detectPassedPawns(at)
+    ...detectPassedPawns(at),
+    ...detectPawnChains(at),
+    ...detectHotspots(at),
+    ...detectOpenFileRooks(at),
+    ...detectKingFortress(at),
+    ...detectForks(at)
   ];
 }
