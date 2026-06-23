@@ -73,6 +73,7 @@ export function startPreview(canvas, packId) {
   let stopped = false;
   let i = 0;
   let cycleStart = null;
+  let last = 0;
   let sc, from, to, tx, ty, fx, fy, fired;
 
   function setup() {
@@ -96,7 +97,9 @@ export function startPreview(canvas, packId) {
   }
 
   function loop(now) {
-    raf = null;
+    raf = stopped ? null : requestAnimationFrame(loop);
+    if (now - last < 32) return; // cap to ~30fps
+    last = now;
     if (cycleStart == null) cycleStart = now;
     const t = now - cycleStart;
     drawBoard(ctx, size, sc.context);
@@ -117,8 +120,6 @@ export function startPreview(canvas, packId) {
         setup();
       }
     }
-
-    if (!stopped) raf = requestAnimationFrame(loop);
   }
 
   setup();

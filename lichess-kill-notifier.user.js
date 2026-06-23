@@ -4682,6 +4682,35 @@
   }
   var ALL_DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
   var ORTHO_DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+  var DIAG_DIRS = [[1, 1], [1, -1], [-1, 1], [-1, -1]];
+  var KNIGHT_HOPS = [[1, 2], [2, 1], [2, -1], [1, -2], [-1, -2], [-2, -1], [-2, 1], [-1, 2]];
+  function attackSquares(at, f, r) {
+    const p = pieceAt(at, f, r);
+    if (!p) return [];
+    const out = [];
+    const onBoard = (nf, nr) => nf >= 0 && nf < 8 && nr >= 1 && nr <= 8;
+    if (p.type === "n") {
+      for (const [df, dr] of KNIGHT_HOPS) if (onBoard(f + df, r + dr)) out.push([f + df, r + dr]);
+    } else if (p.type === "k") {
+      for (const [df, dr] of ALL_DIRS) if (onBoard(f + df, r + dr)) out.push([f + df, r + dr]);
+    } else if (p.type === "p") {
+      const fwd = p.color === "w" ? 1 : -1;
+      if (onBoard(f - 1, r + fwd)) out.push([f - 1, r + fwd]);
+      if (onBoard(f + 1, r + fwd)) out.push([f + 1, r + fwd]);
+    } else {
+      const dirs = p.type === "r" ? ORTHO_DIRS : p.type === "b" ? DIAG_DIRS : ALL_DIRS;
+      for (const [df, dr] of dirs) {
+        let nf = f + df, nr = r + dr;
+        while (onBoard(nf, nr)) {
+          out.push([nf, nr]);
+          if (pieceAt(at, nf, nr)) break;
+          nf += df;
+          nr += dr;
+        }
+      }
+    }
+    return out;
+  }
   function detectBatteries(at) {
     const out = [];
     const seen = /* @__PURE__ */ new Set();
@@ -4755,6 +4784,114 @@
     }
     return out;
   }
+  function detectPawnChains(at) {
+    const out = [];
+    for (const c of ["w", "b"]) {
+      const fwd = c === "w" ? 1 : -1;
+      for (const df of [-1, 1]) {
+        for (let f = 0; f < 8; f++) {
+          for (let r = 1; r <= 8; r++) {
+            if (!isPawnOf(pieceAt(at, f, r), c)) continue;
+            if (isPawnOf(pieceAt(at, f - df, r - fwd), c)) continue;
+            const squares = [];
+            let nf = f, nr = r;
+            while (isPawnOf(pieceAt(at, nf, nr), c)) {
+              squares.push(toSquare(nf, nr));
+              nf += df;
+              nr += fwd;
+            }
+            if (squares.length >= 3) {
+              out.push({ type: "pawn-chain", side: c, squares, line: null, label: "Bauernkette" });
+            }
+          }
+        }
+      }
+    }
+    return out;
+  }
+  var HOTSPOT_MIN = 4;
+  function detectHotspots(at) {
+    const out = [];
+    const map = {};
+    for (let f = 0; f < 8; f++) {
+      for (let r = 1; r <= 8; r++) {
+        const p = pieceAt(at, f, r);
+        if (!p) continue;
+        for (const [nf, nr] of attackSquares(at, f, r)) {
+          const k = `${nf},${nr}`;
+          (map[k] || (map[k] = { w: [], b: [] }))[p.color].push(toSquare(f, r));
+        }
+      }
+    }
+    for (const k of Object.keys(map)) {
+      for (const color of ["w", "b"]) {
+        const attackers = map[k][color];
+        if (attackers.length >= HOTSPOT_MIN) {
+          const [tf, tr] = k.split(",").map(Number);
+          out.push({ type: "hotspot", side: color, squares: [toSquare(tf, tr), ...attackers], line: null, label: "Brennpunkt" });
+        }
+      }
+    }
+    return out;
+  }
+  function detectOpenFileRooks(at) {
+    const out = [];
+    for (let f = 0; f < 8; f++) {
+      let pawn = false;
+      for (let r = 1; r <= 8; r++) {
+        const p = pieceAt(at, f, r);
+        if (p && p.type === "p") {
+          pawn = true;
+          break;
+        }
+      }
+      if (pawn) continue;
+      for (let r = 1; r <= 8; r++) {
+        const p = pieceAt(at, f, r);
+        if (p && p.type === "r") {
+          const endR = p.color === "w" ? 8 : 1;
+          out.push({ type: "open-file", side: p.color, squares: [toSquare(f, r)], line: { from: toSquare(f, r), to: toSquare(f, endR) }, label: "Offene Linie" });
+        }
+      }
+    }
+    return out;
+  }
+  var FORTRESS = [
+    { king: "g1", pawns: ["f2", "g2", "h2"], color: "w" },
+    { king: "c1", pawns: ["b2", "c2", "d2"], color: "w" },
+    { king: "g8", pawns: ["f7", "g7", "h7"], color: "b" },
+    { king: "c8", pawns: ["b7", "c7", "d7"], color: "b" }
+  ];
+  function detectKingFortress(at) {
+    const out = [];
+    for (const fort of FORTRESS) {
+      const k = pieceAtSquare(at, fort.king);
+      if (!k || k.type !== "k" || k.color !== fort.color) continue;
+      if (!fort.pawns.every((sq) => isPawnOf(pieceAtSquare(at, sq), fort.color))) continue;
+      out.push({ type: "fortress", side: fort.color, squares: [fort.king, ...fort.pawns], line: null, label: "Festung" });
+    }
+    return out;
+  }
+  function detectForks(at) {
+    const out = [];
+    for (let f = 0; f < 8; f++) {
+      for (let r = 1; r <= 8; r++) {
+        const p = pieceAt(at, f, r);
+        if (!p) continue;
+        const myVal = VALUE2[p.type];
+        const enemy = p.color === "w" ? "b" : "w";
+        const targets = [];
+        for (const [nf, nr] of attackSquares(at, f, r)) {
+          const q = pieceAt(at, nf, nr);
+          if (q && q.color === enemy && VALUE2[q.type] >= myVal) targets.push(toSquare(nf, nr));
+        }
+        if (targets.length >= 2) {
+          out.push({ type: "fork", side: p.color, squares: [toSquare(f, r), ...targets], line: null, label: "Gabel" });
+        }
+      }
+    }
+    return out;
+  }
   function detectPatterns(board) {
     const at = indexBoard(board);
     return [
@@ -4763,31 +4900,713 @@
       ...detectPinsAndSkewers(at),
       ...detectFianchetto(at),
       ...detectOutposts(at),
-      ...detectPassedPawns(at)
+      ...detectPassedPawns(at),
+      ...detectPawnChains(at),
+      ...detectHotspots(at),
+      ...detectOpenFileRooks(at),
+      ...detectKingFortress(at),
+      ...detectForks(at)
     ];
   }
 
-  // src/pattern-overlay.js
-  var GREEN = "#3bd17a";
-  var RED = "#e5564b";
-  function patternColor(side, isBlackOrientation) {
-    const bottomSide = isBlackOrientation ? "b" : "w";
-    return side === bottomSide ? GREEN : RED;
+  // src/pattern-art.js
+  var FILES2 = "abcdefgh";
+  var PATTERN_THEMES = [
+    { id: "classic", label: "Classic", own: "#3bd17a", enemy: "#e5564b", spark: "#ffffff" },
+    { id: "fire", label: "Fire", own: "#ffb347", enemy: "#ff5757", spark: "#fff1c0" },
+    { id: "void", label: "Void", own: "#b98cff", enemy: "#ff66d8", spark: "#ffffff" },
+    { id: "ice", label: "Ice", own: "#6fe6ff", enemy: "#ff8aa6", spark: "#eafcff" },
+    { id: "gold", label: "Gold", own: "#ffd76a", enemy: "#c8893a", spark: "#fff6d8" }
+  ];
+  var center = (square, size, blackO) => boardLocalSquareCenter(square, size, blackO);
+  var clamp01 = (x) => Math.max(0, Math.min(1, x));
+  function easeOutBack(x) {
+    const c1 = 1.70158, c3 = c1 + 1;
+    return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2);
   }
+  var colorFor = (pattern, theme, blackO) => pattern.side === (blackO ? "b" : "w") ? theme.own : theme.enemy;
+  function forwardDir(square, side, size, blackO) {
+    const f = square.charCodeAt(0) - 97;
+    const r = Number(square[1]);
+    const aheadR = r + (side === "w" ? 1 : -1);
+    if (aheadR < 1 || aheadR > 8) return (side === "w" ? -1 : 1) * (blackO ? -1 : 1);
+    const here = center(square, size, blackO);
+    const ahead = center(`${FILES2[f]}${aheadR}`, size, blackO);
+    return Math.sign(ahead.y - here.y) || -1;
+  }
+  function squareGlow(ctx, p, sq, color, now, phase = 0) {
+    const pulse = 0.55 + 0.45 * Math.sin(now / 330 + phase);
+    cornerTicks(ctx, p.x, p.y, sq, color, {
+      hs: sq / 2 - sq * 0.1,
+      len: sq * 0.16,
+      lw: Math.max(2, sq * 0.06),
+      alpha: 0.4 + 0.5 * pulse,
+      blur: sq * (0.2 + 0.35 * pulse)
+    });
+  }
+  function cornerTicks(ctx, x, y, sq, color, { hs, len, lw, alpha, blur }) {
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = lw;
+    ctx.lineCap = "round";
+    ctx.shadowColor = color;
+    ctx.shadowBlur = blur;
+    for (const sx of [-1, 1]) {
+      for (const sy of [-1, 1]) {
+        const cx = x + sx * hs, cy = y + sy * hs;
+        ctx.beginPath();
+        ctx.moveTo(cx - sx * len, cy);
+        ctx.lineTo(cx, cy);
+        ctx.lineTo(cx, cy - sy * len);
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
+  }
+  function microSparks(ctx, x, y, sq, color, now, count = 6, spread = 0.5, intensity = 1) {
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+    ctx.shadowColor = color;
+    ctx.shadowBlur = sq * 0.12;
+    ctx.fillStyle = color;
+    for (let i = 0; i < count; i++) {
+      const ang = now / 900 + i * 2.39963;
+      const rad = sq * spread * (0.35 + 0.65 * ((Math.sin(now / 680 + i * 1.7) + 1) / 2));
+      const tw = 0.35 + 0.65 * ((Math.sin(now / 190 + i * 3.1) + 1) / 2);
+      ctx.globalAlpha = 0.22 * tw * intensity;
+      ctx.beginPath();
+      ctx.arc(x + Math.cos(ang) * rad, y + Math.sin(ang) * rad, Math.max(0.5, sq * 0.026 * tw), 0, 6.2832);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+  function energyBolt(ctx, from, to, sq, color) {
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+    ctx.strokeStyle = color;
+    ctx.lineCap = "round";
+    ctx.shadowColor = color;
+    ctx.shadowBlur = sq * 0.4;
+    ctx.lineWidth = Math.max(2, sq * 0.07);
+    ctx.beginPath();
+    ctx.moveTo(from.x, from.y);
+    ctx.lineTo(to.x, to.y);
+    ctx.stroke();
+    ctx.restore();
+  }
+  function drawShield(ctx, cx, cy, sq, color, bulge, scale, alpha) {
+    const w = sq * 1.5;
+    const h = sq * 1.05 * scale;
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.lineWidth = Math.max(2, sq * 0.08);
+    ctx.strokeStyle = color;
+    ctx.shadowColor = color;
+    ctx.shadowBlur = sq * 0.5;
+    ctx.beginPath();
+    ctx.moveTo(-w, 0);
+    ctx.quadraticCurveTo(0, bulge * h * 1.4, w, 0);
+    ctx.fillStyle = color;
+    ctx.globalAlpha = alpha * 0.16;
+    ctx.fill();
+    ctx.globalAlpha = alpha;
+    ctx.stroke();
+    ctx.restore();
+  }
+  function drawLaser(ctx, a, b, sq, color, spark, intensity) {
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+    ctx.lineCap = "round";
+    ctx.shadowColor = color;
+    ctx.shadowBlur = sq * 0.6 * intensity;
+    ctx.globalAlpha = intensity;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = Math.max(2, sq * 0.14 * intensity);
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+    ctx.stroke();
+    ctx.strokeStyle = spark;
+    ctx.globalAlpha = intensity * 0.9;
+    ctx.lineWidth = Math.max(1, sq * 0.05);
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+    ctx.stroke();
+    ctx.fillStyle = spark;
+    ctx.beginPath();
+    ctx.arc(a.x, a.y, sq * 0.18 * intensity, 0, 6.2832);
+    ctx.fill();
+    ctx.restore();
+  }
+  function drawFianchetto(ctx, size, pattern, now, theme, blackO) {
+    const color = colorFor(pattern, theme, blackO);
+    const sq = size / 8;
+    const bsq = pattern.squares[0];
+    const bf = bsq.charCodeAt(0) - 97;
+    const br = Number(bsq[1]);
+    const c = center(bsq, size, blackO);
+    const dir = forwardDir(bsq, pattern.side, size, blackO);
+    const cyc = now % 2e3 / 2e3;
+    const pop = cyc < 0.12 ? easeOutBack(clamp01(cyc / 0.12)) : 1;
+    const breathe = 0.94 + 0.06 * Math.sin(now / 300);
+    drawShield(ctx, c.x, c.y, sq, color, dir, pop * breathe, Math.min(1, pop));
+    microSparks(ctx, c.x, c.y + dir * sq * 0.7, sq, theme.spark, now, 7, 0.7, 0.8);
+    if (cyc > 0.35 && cyc < 0.62) {
+      const intensity = Math.sin((cyc - 0.35) / 0.27 * Math.PI);
+      const df = bf < 4 ? 1 : -1;
+      const dr = pattern.side === "w" ? 1 : -1;
+      let ef = bf, er = br;
+      while (ef + df >= 0 && ef + df < 8 && er + dr >= 1 && er + dr <= 8) {
+        ef += df;
+        er += dr;
+      }
+      drawLaser(ctx, c, center(`${FILES2[ef]}${er}`, size, blackO), sq, color, theme.spark, intensity);
+      microSparks(ctx, c.x, c.y, sq, theme.spark, now, 5, 0.4, intensity);
+    }
+  }
+  function drawWall(ctx, cx, baseY, sq, color, dir, scale, alpha) {
+    const halfW = sq * 1.15;
+    const h = sq * 0.8 * scale;
+    const topY = baseY + dir * h;
+    const merlon = sq * 0.18;
+    const segments = 7;
+    const segW = halfW * 2 / segments;
+    const leftX = cx - halfW, rightX = cx + halfW;
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = Math.max(2, sq * 0.06);
+    ctx.lineJoin = "miter";
+    ctx.lineCap = "square";
+    ctx.shadowColor = color;
+    ctx.shadowBlur = sq * 0.4;
+    ctx.beginPath();
+    ctx.moveTo(leftX, baseY);
+    ctx.lineTo(leftX, topY);
+    for (let i = 0; i < segments; i++) {
+      const x0 = leftX + i * segW;
+      const x1 = x0 + segW;
+      if (i % 2 === 0) {
+        ctx.lineTo(x0, topY + dir * merlon);
+        ctx.lineTo(x1, topY + dir * merlon);
+        ctx.lineTo(x1, topY);
+      } else {
+        ctx.lineTo(x1, topY);
+      }
+    }
+    ctx.lineTo(rightX, baseY);
+    ctx.globalAlpha = alpha * 0.13;
+    ctx.fillStyle = color;
+    ctx.fill();
+    ctx.globalAlpha = alpha;
+    ctx.stroke();
+    ctx.restore();
+  }
+  function drawFortress(ctx, size, pattern, now, theme, blackO) {
+    const color = colorFor(pattern, theme, blackO);
+    const sq = size / 8;
+    const k = center(pattern.squares[0], size, blackO);
+    const pawnY = center(pattern.squares[1], size, blackO).y;
+    const dir = Math.sign(pawnY - k.y) || -1;
+    const baseY = (k.y + pawnY) / 2;
+    const cyc = now % 2200 / 2200;
+    const pop = cyc < 0.12 ? easeOutBack(clamp01(cyc / 0.12)) : 1;
+    const breathe = 0.96 + 0.04 * Math.sin(now / 320);
+    drawWall(ctx, k.x, baseY, sq, color, dir, pop * breathe, Math.min(1, pop));
+    for (const s of pattern.squares) squareGlow(ctx, center(s, size, blackO), sq, color, now);
+    microSparks(ctx, k.x, baseY + dir * sq * 0.6, sq, theme.spark, now, 7, 0.9, 0.6);
+  }
+  function drawRooks(ctx, size, pattern, now, theme, blackO) {
+    const color = colorFor(pattern, theme, blackO);
+    const sq = size / 8;
+    const a = center(pattern.line.from, size, blackO);
+    const b = center(pattern.line.to, size, blackO);
+    const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+    const cyc = now % 1700 / 1700;
+    squareGlow(ctx, a, sq, color, now);
+    squareGlow(ctx, b, sq, color, now, 1.4);
+    if (cyc < 0.42) {
+      const p = cyc / 0.42;
+      energyBolt(ctx, a, { x: a.x + (mid.x - a.x) * p, y: a.y + (mid.y - a.y) * p }, sq, color);
+      energyBolt(ctx, b, { x: b.x + (mid.x - b.x) * p, y: b.y + (mid.y - b.y) * p }, sq, color);
+    } else {
+      const p = (cyc - 0.42) / 0.58;
+      const flash = Math.max(0, 1 - p * 4);
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+      ctx.strokeStyle = color;
+      ctx.lineCap = "round";
+      ctx.shadowColor = color;
+      ctx.shadowBlur = sq * 0.4;
+      ctx.globalAlpha = 0.5 + 0.3 * Math.sin(now / 250);
+      ctx.lineWidth = Math.max(2, sq * 0.13);
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.stroke();
+      ctx.restore();
+      if (flash > 0) {
+        ctx.save();
+        ctx.globalCompositeOperation = "lighter";
+        ctx.fillStyle = theme.spark;
+        ctx.shadowColor = color;
+        ctx.shadowBlur = sq * 0.8 * flash;
+        ctx.globalAlpha = flash;
+        ctx.beginPath();
+        ctx.arc(mid.x, mid.y, sq * 0.1 + sq * 0.3 * flash, 0, 6.2832);
+        ctx.fill();
+        ctx.restore();
+      }
+      const gp = now / 700 % 1;
+      microSparks(ctx, a.x + (b.x - a.x) * gp, a.y + (b.y - a.y) * gp, sq, theme.spark, now, 3, 0.18);
+    }
+  }
+  function drawBattery(ctx, size, pattern, now, theme, blackO) {
+    const color = colorFor(pattern, theme, blackO);
+    const sq = size / 8;
+    const a = center(pattern.line.from, size, blackO);
+    const b = center(pattern.line.to, size, blackO);
+    squareGlow(ctx, a, sq, color, now);
+    squareGlow(ctx, b, sq, color, now, 1);
+    const cyc = now % 1500 / 1500;
+    ctx.save();
+    ctx.globalAlpha = 0.35;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = Math.max(2, sq * 0.05);
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+    ctx.stroke();
+    ctx.restore();
+    if (cyc < 0.7) {
+      const p = cyc / 0.7;
+      const hx = a.x + (b.x - a.x) * p, hy = a.y + (b.y - a.y) * p;
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+      ctx.fillStyle = color;
+      ctx.shadowColor = color;
+      ctx.shadowBlur = sq * 0.6;
+      ctx.globalAlpha = 0.4 + 0.6 * p;
+      ctx.beginPath();
+      ctx.arc(hx, hy, sq * (0.08 + 0.06 * p), 0, 6.2832);
+      ctx.fill();
+      ctx.restore();
+      microSparks(ctx, hx, hy, sq, theme.spark, now, 4, 0.25, p);
+    } else {
+      const p = (cyc - 0.7) / 0.3;
+      const f = Math.max(0, 1 - p);
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+      ctx.lineCap = "round";
+      ctx.shadowColor = color;
+      ctx.shadowBlur = sq * 0.8 * f;
+      ctx.globalAlpha = f;
+      ctx.strokeStyle = theme.spark;
+      ctx.lineWidth = Math.max(2, sq * 0.16 * f);
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.stroke();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = Math.max(1, sq * 0.06);
+      for (const c of [a, b]) {
+        ctx.globalAlpha = f * 0.8;
+        ctx.beginPath();
+        ctx.arc(c.x, c.y, sq * (0.3 + 0.5 * p), 0, 6.2832);
+        ctx.stroke();
+      }
+      ctx.restore();
+      microSparks(ctx, b.x, b.y, sq, theme.spark, now, 8, 0.6, f);
+    }
+  }
+  function lockBrackets(ctx, cx, cy, sq, color, close) {
+    const gap = sq * (0.62 - 0.18 * close);
+    const len = sq * 0.2;
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = Math.max(2, sq * 0.05);
+    ctx.lineCap = "round";
+    ctx.shadowColor = color;
+    ctx.shadowBlur = sq * 0.25;
+    for (let q = 0; q < 4; q++) {
+      const sx = q < 2 ? -1 : 1;
+      const sy = q % 2 === 0 ? -1 : 1;
+      const x = cx + sx * gap, y = cy + sy * gap;
+      ctx.beginPath();
+      ctx.moveTo(x, y - sy * len);
+      ctx.lineTo(x, y);
+      ctx.lineTo(x - sx * len, y);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+  function drawPin(ctx, size, pattern, now, theme, blackO) {
+    const color = colorFor(pattern, theme, blackO);
+    const sq = size / 8;
+    const att = center(pattern.squares[0], size, blackO);
+    const pinned = center(pattern.squares[1], size, blackO);
+    const target = center(pattern.squares[2], size, blackO);
+    ctx.save();
+    ctx.globalAlpha = 0.45;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = Math.max(2, sq * 0.045);
+    ctx.lineCap = "round";
+    ctx.setLineDash([sq * 0.13, sq * 0.1]);
+    ctx.lineDashOffset = -(now / 35 % 1e3);
+    ctx.beginPath();
+    ctx.moveTo(att.x, att.y);
+    ctx.lineTo(target.x, target.y);
+    ctx.stroke();
+    ctx.restore();
+    squareGlow(ctx, target, sq, color, now, 1);
+    const cyc = now % 1600 / 1600;
+    const close = cyc < 0.5 ? easeOutBack(clamp01(cyc / 0.3)) : 1;
+    const shake = cyc > 0.3 && cyc < 0.5 ? Math.sin(now / 28) * sq * 0.025 : 0;
+    lockBrackets(ctx, pinned.x + shake, pinned.y, sq, color, close);
+    if (close > 0.9) microSparks(ctx, pinned.x, pinned.y, sq, theme.spark, now, 4, 0.45, 0.8);
+  }
+  function drawSkewer(ctx, size, pattern, now, theme, blackO) {
+    const color = colorFor(pattern, theme, blackO);
+    const sq = size / 8;
+    const att = center(pattern.squares[0], size, blackO);
+    const back = center(pattern.squares[2], size, blackO);
+    const cyc = now % 1200 / 1200;
+    ctx.save();
+    ctx.globalAlpha = 0.3;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = Math.max(2, sq * 0.04);
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(att.x, att.y);
+    ctx.lineTo(back.x, back.y);
+    ctx.stroke();
+    ctx.restore();
+    if (cyc < 0.5) {
+      const p = clamp01(cyc / 0.5);
+      const hx = att.x + (back.x - att.x) * p, hy = att.y + (back.y - att.y) * p;
+      const tp = Math.max(0, p - 0.3);
+      const tx = att.x + (back.x - att.x) * tp, ty = att.y + (back.y - att.y) * tp;
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+      ctx.strokeStyle = color;
+      ctx.lineCap = "round";
+      ctx.shadowColor = color;
+      ctx.shadowBlur = sq * 0.5;
+      ctx.lineWidth = Math.max(2, sq * 0.1);
+      ctx.beginPath();
+      ctx.moveTo(tx, ty);
+      ctx.lineTo(hx, hy);
+      ctx.stroke();
+      ctx.fillStyle = theme.spark;
+      ctx.beginPath();
+      ctx.arc(hx, hy, sq * 0.12, 0, 6.2832);
+      ctx.fill();
+      ctx.restore();
+      microSparks(ctx, hx, hy, sq, theme.spark, now, 4, 0.2, 1);
+    } else if (cyc < 0.72) {
+      const f = 1 - (cyc - 0.5) / 0.22;
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+      ctx.fillStyle = theme.spark;
+      ctx.shadowColor = color;
+      ctx.shadowBlur = sq * 0.8 * f;
+      ctx.globalAlpha = f;
+      ctx.beginPath();
+      ctx.arc(back.x, back.y, sq * 0.15 + sq * 0.25 * (1 - f), 0, 6.2832);
+      ctx.fill();
+      ctx.restore();
+      microSparks(ctx, back.x, back.y, sq, theme.spark, now, 6, 0.45, f);
+    }
+  }
+  function drawOutpost(ctx, size, pattern, now, theme, blackO) {
+    const color = colorFor(pattern, theme, blackO);
+    const sq = size / 8;
+    const c = center(pattern.squares[0], size, blackO);
+    const cyc = now % 2200 / 2200;
+    const pulse = cyc % 0.5 / 0.5;
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.globalAlpha = 0.5 * (1 - pulse);
+    ctx.lineWidth = Math.max(1, sq * 0.05);
+    ctx.shadowColor = color;
+    ctx.shadowBlur = sq * 0.3;
+    ctx.beginPath();
+    ctx.arc(c.x, c.y, sq * 0.35 + sq * 0.35 * pulse, 0, 6.2832);
+    ctx.stroke();
+    ctx.restore();
+    const rise = cyc < 0.15 ? easeOutBack(clamp01(cyc / 0.15)) : 1;
+    const poleH = sq * 0.72 * rise;
+    const px = c.x + sq * 0.28, py = c.y - sq * 0.1;
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = Math.max(2, sq * 0.05);
+    ctx.lineCap = "round";
+    ctx.shadowColor = color;
+    ctx.shadowBlur = sq * 0.2;
+    ctx.beginPath();
+    ctx.moveTo(px, py);
+    ctx.lineTo(px, py - poleH);
+    ctx.stroke();
+    const wave = Math.sin(now / 180) * sq * 0.05;
+    ctx.fillStyle = color;
+    ctx.globalAlpha = 0.92 * rise;
+    ctx.beginPath();
+    ctx.moveTo(px, py - poleH);
+    ctx.lineTo(px - sq * 0.32, py - poleH + sq * 0.1 + wave);
+    ctx.lineTo(px, py - poleH + sq * 0.22);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+    microSparks(ctx, c.x, c.y, sq, theme.spark, now, 6, 0.5, 0.7);
+  }
+  function drawPassedPawn(ctx, size, pattern, now, theme, blackO) {
+    const color = colorFor(pattern, theme, blackO);
+    const sq = size / 8;
+    const c = center(pattern.squares[0], size, blackO);
+    const dir = forwardDir(pattern.squares[0], pattern.side, size, blackO);
+    squareGlow(ctx, c, sq, color, now);
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+    ctx.strokeStyle = color;
+    ctx.lineCap = "round";
+    ctx.lineWidth = Math.max(2, sq * 0.06);
+    ctx.shadowColor = color;
+    ctx.shadowBlur = sq * 0.3;
+    for (let i = 0; i < 3; i++) {
+      const phase = (now / 500 + i * 0.34) % 1;
+      const cy = c.y + dir * sq * (0.4 + phase * 2.2);
+      const wsp = sq * 0.22;
+      ctx.globalAlpha = (1 - phase) * 0.9;
+      ctx.beginPath();
+      ctx.moveTo(c.x - wsp, cy + dir * wsp * 0.6);
+      ctx.lineTo(c.x, cy);
+      ctx.lineTo(c.x + wsp, cy + dir * wsp * 0.6);
+      ctx.stroke();
+    }
+    ctx.restore();
+    for (let i = 0; i < 4; i++) {
+      const ph = (now / 900 + i * 0.27) % 1;
+      const mx = c.x + Math.sin(now / 400 + i) * sq * 0.18;
+      const my = c.y + dir * sq * (0.3 + ph * 1.8);
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+      ctx.globalAlpha = (1 - ph) * 0.3;
+      ctx.fillStyle = theme.spark;
+      ctx.shadowColor = theme.spark;
+      ctx.shadowBlur = sq * 0.12;
+      ctx.beginPath();
+      ctx.arc(mx, my, sq * 0.03, 0, 6.2832);
+      ctx.fill();
+      ctx.restore();
+    }
+  }
+  function drawPawnChain(ctx, size, pattern, now, theme, blackO) {
+    const color = colorFor(pattern, theme, blackO);
+    const sq = size / 8;
+    const centers = pattern.squares.map((s) => center(s, size, blackO));
+    const n = centers.length;
+    ctx.save();
+    ctx.globalAlpha = 0.32;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = Math.max(2, sq * 0.045);
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.beginPath();
+    ctx.moveTo(centers[0].x, centers[0].y);
+    for (let i = 1; i < n; i++) ctx.lineTo(centers[i].x, centers[i].y);
+    ctx.stroke();
+    ctx.restore();
+    const pulsePos = now / 900 % 1 * (n - 1);
+    centers.forEach((c, i) => {
+      const strength = (i + 1) / n;
+      const near = Math.max(0, 1 - Math.abs(i - pulsePos));
+      const breathe = 0.5 + 0.5 * Math.sin(now / 300 + i * 0.6);
+      cornerTicks(ctx, c.x, c.y, sq, color, {
+        hs: sq / 2 - sq * 0.1,
+        len: sq * (0.12 + 0.12 * strength),
+        lw: Math.max(2, sq * (0.05 + 0.06 * strength)),
+        alpha: 0.35 + 0.5 * strength * (0.6 + 0.4 * breathe),
+        blur: sq * (0.15 + 0.45 * strength + 0.35 * near)
+      });
+      microSparks(ctx, c.x, c.y, sq, theme.spark, now, 2 + Math.round(strength * 5), 0.42, 0.4 + 0.6 * strength + 0.5 * near);
+    });
+    const fi = Math.min(Math.floor(pulsePos), n - 2);
+    const fr = pulsePos - fi;
+    const a = centers[fi], b = centers[fi + 1];
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+    ctx.fillStyle = theme.spark;
+    ctx.shadowColor = color;
+    ctx.shadowBlur = sq * 0.5;
+    ctx.beginPath();
+    ctx.arc(a.x + (b.x - a.x) * fr, a.y + (b.y - a.y) * fr, sq * 0.1, 0, 6.2832);
+    ctx.fill();
+    ctx.restore();
+  }
+  function drawHotspot(ctx, size, pattern, now, theme, blackO) {
+    const color = colorFor(pattern, theme, blackO);
+    const sq = size / 8;
+    const focal = center(pattern.squares[0], size, blackO);
+    const attackers = pattern.squares.slice(1).map((s) => center(s, size, blackO));
+    const n = attackers.length;
+    const heat = Math.min(1, (n - 3) / 4 + 0.45);
+    const breathe = 0.6 + 0.4 * Math.sin(now / 250);
+    attackers.forEach((a, i) => {
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+      ctx.strokeStyle = color;
+      ctx.lineCap = "round";
+      ctx.shadowColor = color;
+      ctx.shadowBlur = sq * 0.2;
+      ctx.globalAlpha = 0.28;
+      ctx.lineWidth = Math.max(1, sq * 0.04);
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(focal.x, focal.y);
+      ctx.stroke();
+      const p = (now / 700 + i * 0.18) % 1;
+      ctx.globalAlpha = 0.85;
+      ctx.fillStyle = theme.spark;
+      ctx.beginPath();
+      ctx.arc(a.x + (focal.x - a.x) * p, a.y + (focal.y - a.y) * p, sq * 0.05, 0, 6.2832);
+      ctx.fill();
+      ctx.restore();
+    });
+    const rad = sq * (0.45 + 0.45 * heat) * breathe;
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+    const grd = ctx.createRadialGradient(focal.x, focal.y, 0, focal.x, focal.y, rad);
+    grd.addColorStop(0, color);
+    grd.addColorStop(1, "transparent");
+    ctx.globalAlpha = 0.55 * breathe;
+    ctx.fillStyle = grd;
+    ctx.beginPath();
+    ctx.arc(focal.x, focal.y, rad, 0, 6.2832);
+    ctx.fill();
+    ctx.restore();
+    microSparks(ctx, focal.x, focal.y, sq, theme.spark, now, 4 + n, 0.4, heat);
+  }
+  function drawOpenFile(ctx, size, pattern, now, theme, blackO) {
+    const color = colorFor(pattern, theme, blackO);
+    const sq = size / 8;
+    const a = center(pattern.line.from, size, blackO);
+    const b = center(pattern.line.to, size, blackO);
+    squareGlow(ctx, a, sq, color, now);
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+    ctx.strokeStyle = color;
+    ctx.lineCap = "round";
+    ctx.shadowColor = color;
+    ctx.shadowBlur = sq * 0.3;
+    ctx.globalAlpha = 0.28;
+    ctx.lineWidth = Math.max(2, sq * 0.1);
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+    ctx.stroke();
+    const p = now / 1100 % 1;
+    const px = a.x + (b.x - a.x) * p, py = a.y + (b.y - a.y) * p;
+    ctx.globalAlpha = 0.9;
+    ctx.fillStyle = theme.spark;
+    ctx.shadowBlur = sq * 0.5;
+    ctx.beginPath();
+    ctx.arc(px, py, sq * 0.12, 0, 6.2832);
+    ctx.fill();
+    ctx.restore();
+    microSparks(ctx, px, py, sq, theme.spark, now, 4, 0.25);
+  }
+  function drawFork(ctx, size, pattern, now, theme, blackO) {
+    const color = colorFor(pattern, theme, blackO);
+    const sq = size / 8;
+    const att = center(pattern.squares[0], size, blackO);
+    const targets = pattern.squares.slice(1).map((s) => center(s, size, blackO));
+    squareGlow(ctx, att, sq, color, now);
+    const cyc = now % 1300 / 1300;
+    targets.forEach((t, i) => {
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+      ctx.strokeStyle = color;
+      ctx.lineCap = "round";
+      ctx.shadowColor = color;
+      ctx.shadowBlur = sq * 0.25;
+      ctx.globalAlpha = 0.35;
+      ctx.lineWidth = Math.max(1, sq * 0.045);
+      ctx.beginPath();
+      ctx.moveTo(att.x, att.y);
+      ctx.lineTo(t.x, t.y);
+      ctx.stroke();
+      const p = clamp01((cyc - i * 0.06) / 0.4);
+      if (cyc < 0.55) {
+        ctx.globalAlpha = 0.9;
+        ctx.fillStyle = theme.spark;
+        ctx.shadowBlur = sq * 0.4;
+        ctx.beginPath();
+        ctx.arc(att.x + (t.x - att.x) * p, att.y + (t.y - att.y) * p, sq * 0.06, 0, 6.2832);
+        ctx.fill();
+      }
+      ctx.restore();
+      cornerTicks(ctx, t.x, t.y, sq, color, { hs: sq / 2 - sq * 0.1, len: sq * 0.13, lw: Math.max(2, sq * 0.055), alpha: 0.55, blur: sq * 0.25 });
+    });
+    microSparks(ctx, att.x, att.y, sq, theme.spark, now, 5, 0.4, 0.8);
+  }
+  function drawGeneric(ctx, size, pattern, now, theme, blackO) {
+    const color = colorFor(pattern, theme, blackO);
+    const sq = size / 8;
+    for (const square of pattern.squares) squareGlow(ctx, center(square, size, blackO), sq, color, now);
+  }
+  function drawPatternFx(ctx, size, pattern, now, theme = PATTERN_THEMES[0], blackO = false) {
+    switch (pattern.type) {
+      case "fianchetto":
+        return drawFianchetto(ctx, size, pattern, now, theme, blackO);
+      case "rooks":
+        return drawRooks(ctx, size, pattern, now, theme, blackO);
+      case "battery":
+        return drawBattery(ctx, size, pattern, now, theme, blackO);
+      case "pin":
+        return drawPin(ctx, size, pattern, now, theme, blackO);
+      case "skewer":
+        return drawSkewer(ctx, size, pattern, now, theme, blackO);
+      case "outpost":
+        return drawOutpost(ctx, size, pattern, now, theme, blackO);
+      case "passed-pawn":
+        return drawPassedPawn(ctx, size, pattern, now, theme, blackO);
+      case "pawn-chain":
+        return drawPawnChain(ctx, size, pattern, now, theme, blackO);
+      case "hotspot":
+        return drawHotspot(ctx, size, pattern, now, theme, blackO);
+      case "open-file":
+        return drawOpenFile(ctx, size, pattern, now, theme, blackO);
+      case "fortress":
+        return drawFortress(ctx, size, pattern, now, theme, blackO);
+      case "fork":
+        return drawFork(ctx, size, pattern, now, theme, blackO);
+      default:
+        return drawGeneric(ctx, size, pattern, now, theme, blackO);
+    }
+  }
+
+  // src/pattern-overlay.js
   var PatternOverlay = class {
     constructor({
       document: document2 = globalThis.document,
       devicePixelRatio = globalThis.devicePixelRatio ?? 1,
       ResizeObserver = globalThis.ResizeObserver,
-      getContext = (canvas) => canvas.getContext?.("2d")
+      getContext = (canvas) => canvas.getContext?.("2d"),
+      theme = PATTERN_THEMES[0]
     } = {}) {
       this.document = document2;
       this.devicePixelRatio = devicePixelRatio;
       this.ResizeObserver = ResizeObserver;
       this.getContext = getContext;
+      this.theme = theme;
       this.canvas = null;
       this.board = null;
       this.resizeObserver = null;
+      this.patterns = [];
+      this.raf = null;
+      this.last = 0;
     }
     attach() {
       this.board = this.document.querySelector("cg-board");
@@ -4819,65 +5638,50 @@
       const isBlackOrientation = this.document.querySelector(".cg-wrap")?.classList.contains("orientation-black") ?? false;
       return { context, size, isBlackOrientation };
     }
+    // Persist the current patterns and animate them on the overlay until they
+    // change or the overlay is cleared. Called on each position change.
     render(patterns) {
+      this.patterns = patterns || [];
       if (!this.canvas) this.attach();
+      if (this.patterns.length === 0) {
+        this._stop();
+        this.clear();
+        return;
+      }
+      this._start();
+    }
+    clear() {
+      this._stop();
+      const state = this.sync();
+      if (state?.context) state.context.clearRect(0, 0, state.size, state.size);
+    }
+    _start() {
+      if (this.raf != null) return;
+      const raf = globalThis.requestAnimationFrame;
+      if (!raf) {
+        this._frame(0);
+        return;
+      }
+      const tick = (now) => {
+        this.raf = raf(tick);
+        if (now - this.last < 32) return;
+        this.last = now;
+        this._frame(now);
+      };
+      this.raf = raf(tick);
+    }
+    _stop() {
+      if (this.raf != null && globalThis.cancelAnimationFrame) globalThis.cancelAnimationFrame(this.raf);
+      this.raf = null;
+    }
+    _frame(now) {
       const state = this.sync();
       if (!state || !state.context) return;
       const { context, size, isBlackOrientation } = state;
       context.clearRect(0, 0, size, size);
-      for (const pattern of patterns) this._draw(pattern, context, size, isBlackOrientation);
-    }
-    clear() {
-      const state = this.sync();
-      if (state?.context) state.context.clearRect(0, 0, state.size, state.size);
-    }
-    _draw(pattern, ctx, size, isBlackOrientation) {
-      const color = patternColor(pattern.side, isBlackOrientation);
-      const sq = size / 8;
-      const center = (square) => boardLocalSquareCenter(square, size, isBlackOrientation);
-      for (const square of pattern.squares) {
-        const { x, y } = center(square);
-        ctx.save();
-        ctx.globalAlpha = 0.85;
-        ctx.strokeStyle = color;
-        ctx.lineWidth = Math.max(2, sq * 0.06);
-        ctx.shadowColor = color;
-        ctx.shadowBlur = sq * 0.35;
-        const inset = sq * 0.12;
-        ctx.strokeRect(x - sq / 2 + inset, y - sq / 2 + inset, sq - inset * 2, sq - inset * 2);
-        ctx.restore();
+      for (const pattern of this.patterns) {
+        drawPatternFx(context, size, pattern, now, this.theme, isBlackOrientation);
       }
-      if (pattern.line) {
-        const a = center(pattern.line.from);
-        const b = center(pattern.line.to);
-        ctx.save();
-        ctx.globalAlpha = 0.55;
-        ctx.strokeStyle = color;
-        ctx.lineWidth = Math.max(2, sq * 0.05);
-        ctx.lineCap = "round";
-        ctx.beginPath();
-        ctx.moveTo(a.x, a.y);
-        ctx.lineTo(b.x, b.y);
-        ctx.stroke();
-        ctx.restore();
-      }
-      const key = center(pattern.squares[0]);
-      const fontPx = Math.max(9, Math.round(sq * 0.22));
-      ctx.save();
-      ctx.font = `600 ${fontPx}px 'Space Grotesk', system-ui, sans-serif`;
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      const text = pattern.label;
-      const w = ctx.measureText(text).width + fontPx * 0.7;
-      const h = fontPx * 1.5;
-      const ly = key.y - sq * 0.42;
-      ctx.fillStyle = "rgba(20,18,28,0.85)";
-      ctx.beginPath();
-      ctx.roundRect(key.x - w / 2, ly - h / 2, w, h, h / 2);
-      ctx.fill();
-      ctx.fillStyle = color;
-      ctx.fillText(text, key.x, ly);
-      ctx.restore();
     }
   };
 

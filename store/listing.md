@@ -15,6 +15,12 @@ sound effects and a subtle board shake on queen captures add extra impact.
 Works in normal games, analysis main line, Lichess TV, and puzzle history.
 Click the toolbar icon to toggle effects on/off, mute sound, or set intensity.
 
+**Disclaimer (include verbatim in the listing):**
+This is an unofficial, independent add-on. It is not affiliated with, endorsed by,
+sponsored by, or connected to Lichess or lichess.org in any way. It only overlays
+visual effects on the site and does not change gameplay. "Lichess" is a trademark
+of its respective owners; it is used here only to describe what the add-on works with.
+
 **Category:** Entertainment (alt: Sports)
 
 **Single purpose:**
