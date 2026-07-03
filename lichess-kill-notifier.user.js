@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Lichess Kill Notifier
 // @namespace    dismo/lichess-kill
-// @version      4.0.1
+// @version      4.0.2
 // @description  Killing-Animationen bei Schlagzuegen mit eigenem Chess-State statt fragilem Board-DOM.
 // @author       Dismo
 // @match        https://lichess.org/*
@@ -4894,6 +4894,41 @@
     }
     return out;
   }
+  function attackersOf(at, f, r, color) {
+    const out = [];
+    for (let af = 0; af < 8; af++) {
+      for (let ar = 1; ar <= 8; ar++) {
+        const p = pieceAt(at, af, ar);
+        if (!p || p.color !== color) continue;
+        for (const [tf, tr] of attackSquares(at, af, ar)) {
+          if (tf === f && tr === r) {
+            out.push(p);
+            break;
+          }
+        }
+      }
+    }
+    return out;
+  }
+  function detectHangingPieces(at) {
+    const out = [];
+    for (let f = 0; f < 8; f++) {
+      for (let r = 1; r <= 8; r++) {
+        const p = pieceAt(at, f, r);
+        if (!p || p.type === "k") continue;
+        const enemy = p.color === "w" ? "b" : "w";
+        const attackers = attackersOf(at, f, r, enemy);
+        if (attackers.length === 0) continue;
+        const defenders = attackersOf(at, f, r, p.color);
+        const cheapestAttacker = Math.min(...attackers.map((a) => VALUE2[a.type]));
+        const hanging = defenders.length === 0 || cheapestAttacker < VALUE2[p.type];
+        if (hanging) {
+          out.push({ type: "hanging", side: p.color, squares: [toSquare(f, r)], line: null, label: "H\xE4ngt" });
+        }
+      }
+    }
+    return out;
+  }
   function detectPatterns(board) {
     const at = indexBoard(board);
     return [
@@ -4907,7 +4942,8 @@
       ...detectHotspots(at),
       ...detectOpenFileRooks(at),
       ...detectKingFortress(at),
-      ...detectForks(at)
+      ...detectForks(at),
+      ...detectHangingPieces(at)
     ];
   }
 
@@ -5373,14 +5409,14 @@
     ctx.globalCompositeOperation = "lighter";
     ctx.strokeStyle = color;
     ctx.lineCap = "round";
-    ctx.lineWidth = Math.max(2, sq * 0.06);
+    ctx.lineWidth = Math.max(1, sq * 0.035);
     ctx.shadowColor = color;
-    ctx.shadowBlur = sq * 0.3;
+    ctx.shadowBlur = sq * 0.15;
     for (let i = 0; i < 3; i++) {
-      const phase = (now / 500 + i * 0.34) % 1;
-      const cy = c.y + dir * sq * (0.3 + phase * 0.9);
-      const wsp = sq * 0.22;
-      ctx.globalAlpha = (1 - phase) * 0.9;
+      const phase = (now / 1800 + i * 0.34) % 1;
+      const cy = c.y + dir * sq * (0.3 + phase * 0.5);
+      const wsp = sq * 0.14;
+      ctx.globalAlpha = (1 - phase) * 0.35;
       ctx.beginPath();
       ctx.moveTo(c.x - wsp, cy + dir * wsp * 0.6);
       ctx.lineTo(c.x, cy);
@@ -5389,17 +5425,17 @@
     }
     ctx.restore();
     for (let i = 0; i < 4; i++) {
-      const ph = (now / 900 + i * 0.27) % 1;
-      const mx = c.x + Math.sin(now / 400 + i) * sq * 0.1;
-      const my = c.y + dir * sq * (0.2 + ph * 0.7);
+      const ph = (now / 2200 + i * 0.27) % 1;
+      const mx = c.x + Math.sin(now / 1400 + i) * sq * 0.07;
+      const my = c.y + dir * sq * (0.15 + ph * 0.4);
       ctx.save();
       ctx.globalCompositeOperation = "lighter";
-      ctx.globalAlpha = (1 - ph) * 0.3;
+      ctx.globalAlpha = (1 - ph) * 0.15;
       ctx.fillStyle = theme.spark;
       ctx.shadowColor = theme.spark;
-      ctx.shadowBlur = sq * 0.12;
+      ctx.shadowBlur = sq * 0.08;
       ctx.beginPath();
-      ctx.arc(mx, my, sq * 0.03, 0, 6.2832);
+      ctx.arc(mx, my, sq * 0.02, 0, 6.2832);
       ctx.fill();
       ctx.restore();
     }
@@ -5558,6 +5594,21 @@
     const sq = size / 8;
     for (const square of pattern.squares) squareGlow(ctx, center(square, size, blackO), sq, color, now);
   }
+  function drawHanging(ctx, size, pattern, now, theme, blackO) {
+    const color = colorFor(pattern, theme, blackO);
+    const sq = size / 8;
+    const c = center(pattern.squares[0], size, blackO);
+    const cyc = now % 3200 / 3200;
+    const pulse = 0.5 + 0.5 * Math.sin(cyc * 6.2832);
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = Math.max(1, sq * 0.02);
+    ctx.globalAlpha = 0.08 + 0.07 * pulse;
+    ctx.beginPath();
+    ctx.arc(c.x, c.y, sq * 0.32 + sq * 0.03 * pulse, 0, 6.2832);
+    ctx.stroke();
+    ctx.restore();
+  }
   function drawPatternFx(ctx, size, pattern, now, theme = PATTERN_THEMES[0], blackO = false) {
     switch (pattern.type) {
       case "fianchetto":
@@ -5584,6 +5635,8 @@
         return drawFortress(ctx, size, pattern, now, theme, blackO);
       case "fork":
         return drawFork(ctx, size, pattern, now, theme, blackO);
+      case "hanging":
+        return drawHanging(ctx, size, pattern, now, theme, blackO);
       default:
         return drawGeneric(ctx, size, pattern, now, theme, blackO);
     }
