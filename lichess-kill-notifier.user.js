@@ -7,6 +7,8 @@
 // @match        https://lichess.org/*
 // @grant        none
 // @run-at       document-idle
+// @downloadURL  https://gist.githubusercontent.com/gapsong/8b78fdf058b436e5b439b86ef2a816b4/raw/lichess-kill-notifier.user.js
+// @updateURL    https://gist.githubusercontent.com/gapsong/8b78fdf058b436e5b439b86ef2a816b4/raw/lichess-kill-notifier.user.js
 // ==/UserScript==
 (() => {
   // src/board-shake.js

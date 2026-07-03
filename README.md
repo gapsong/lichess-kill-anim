@@ -42,12 +42,21 @@ A hosted Web Store build is not published yet — see `store/SUBMIT.md`.
 
 ### Tampermonkey userscript
 
+**One-click install (recommended):** with Tampermonkey installed, open
+[this raw Gist URL](https://gist.githubusercontent.com/gapsong/8b78fdf058b436e5b439b86ef2a816b4/raw/lichess-kill-notifier.user.js)
+and click **Install**.
+Tampermonkey checks the Gist's `@version` periodically and auto-updates when a new build is
+published there, so you only install once.
+
+**Copy-paste (fallback):**
+
 ```bash
 npm run build          # -> lichess-kill-notifier.user.js
 ```
 
 Tampermonkey → **Create new script** → paste the contents of `lichess-kill-notifier.user.js` → save.
-The userscript runs the same engine with default settings (no popup).
+The userscript runs the same engine with default settings (no popup). With this method you must
+repeat the copy-paste manually for future updates.
 
 ## Animation gallery
 
