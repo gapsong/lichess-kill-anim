@@ -8,23 +8,38 @@ export function patternColor(side, isBlackOrientation) {
   return side === bottomSide ? GREEN : RED;
 }
 
+// "Connections" (battery, connected/doubled rooks) and "state" (outpost) hints play
+// one strong intro pulse the moment they first appear, then settle to a faint,
+// low-opacity resting state for as long as the pattern stays on the board. Every
+// other pattern keeps looping at full strength (unchanged).
+const FADE_LIFECYCLE_TYPES = new Set(['battery', 'rooks', 'outpost']);
+const INTRO_MS = 900;
+const STEADY_FADE = 0.16;
+
+function patternKey(pattern) {
+  return `${pattern.type}|${pattern.side}|${pattern.squares.join(',')}`;
+}
+
 export class PatternOverlay {
   constructor({
     document = globalThis.document,
     devicePixelRatio = globalThis.devicePixelRatio ?? 1,
     ResizeObserver = globalThis.ResizeObserver,
     getContext = (canvas) => canvas.getContext?.('2d'),
-    theme = PATTERN_THEMES[0]
+    theme = PATTERN_THEMES[0],
+    now = () => (globalThis.performance?.now?.() ?? Date.now())
   } = {}) {
     this.document = document;
     this.devicePixelRatio = devicePixelRatio;
     this.ResizeObserver = ResizeObserver;
     this.getContext = getContext;
     this.theme = theme;
+    this.now = now;
     this.canvas = null;
     this.board = null;
     this.resizeObserver = null;
     this.patterns = [];
+    this.firstSeen = new Map();
     this.raf = null;
     this.last = 0;
   }
@@ -65,6 +80,15 @@ export class PatternOverlay {
   // change or the overlay is cleared. Called on each position change.
   render(patterns) {
     this.patterns = patterns || [];
+    const liveKeys = new Set(this.patterns.map(patternKey));
+    for (const key of this.firstSeen.keys()) {
+      if (!liveKeys.has(key)) this.firstSeen.delete(key); // resolved -> next appearance is a fresh intro
+    }
+    const now = this.now();
+    for (const pattern of this.patterns) {
+      const key = patternKey(pattern);
+      if (!this.firstSeen.has(key)) this.firstSeen.set(key, now);
+    }
     if (!this.canvas) this.attach();
     if (this.patterns.length === 0) {
       this._stop();
@@ -76,8 +100,18 @@ export class PatternOverlay {
 
   clear() {
     this._stop();
+    this.firstSeen.clear();
     const state = this.sync();
     if (state?.context) state.context.clearRect(0, 0, state.size, state.size);
+  }
+
+  // 1 during a fade-lifecycle pattern's one-time intro pulse, STEADY_FADE once it
+  // has settled; always 1 for patterns outside the fade lifecycle.
+  fadeFor(pattern, atMs) {
+    if (!FADE_LIFECYCLE_TYPES.has(pattern.type)) return 1;
+    const firstSeenAt = this.firstSeen.get(patternKey(pattern));
+    if (firstSeenAt == null) return 1;
+    return (atMs - firstSeenAt) < INTRO_MS ? 1 : STEADY_FADE;
   }
 
   _start() {
@@ -104,7 +138,7 @@ export class PatternOverlay {
     const { context, size, isBlackOrientation } = state;
     context.clearRect(0, 0, size, size);
     for (const pattern of this.patterns) {
-      drawPatternFx(context, size, pattern, now, this.theme, isBlackOrientation);
+      drawPatternFx(context, size, pattern, now, this.theme, isBlackOrientation, this.fadeFor(pattern, now));
     }
   }
 }

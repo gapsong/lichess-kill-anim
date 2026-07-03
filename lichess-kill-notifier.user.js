@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Lichess Kill Notifier
 // @namespace    dismo/lichess-kill
-// @version      4.0.3
+// @version      4.1.0
 // @description  Killing-Animationen bei Schlagzuegen mit eigenem Chess-State statt fragilem Board-DOM.
 // @author       Dismo
 // @match        https://lichess.org/*
@@ -3597,7 +3597,8 @@
   }
   function derivePosition(snapshot) {
     const chess = snapshot.initialFen ? new Chess(snapshot.initialFen) : new Chess();
-    for (const san of snapshot.sanMoves) {
+    const ply = snapshot.activePly ?? snapshot.sanMoves.length;
+    for (const san of snapshot.sanMoves.slice(0, ply)) {
       try {
         chess.move(san);
       } catch (_error) {
@@ -3773,10 +3774,20 @@
     }
     fireImpact(id, cx, cy, S, victim, renderEvent) {
       this.spawn(id, cx, cy, S, victim);
+      const drama = this.victimDrama(victim.type);
       const sh = this.intensity / 6;
-      const amp = (this.SHAKE[id] || 6) * sh;
-      this.onImpact?.(renderEvent, { amplitude: Math.max(2, amp), durationMs: 320 });
+      const amp = (this.SHAKE[id] || 6) * sh * drama;
+      const durationMs = Math.round(320 * (1 + (drama - 1) * 0.4));
+      this.onImpact?.(renderEvent, { amplitude: Math.max(2, amp), durationMs });
       if (this.soundOn) this.playSound(id);
+    }
+    // Scales a kill effect by the VALUE of the captured piece, so capturing a queen
+    // is a visibly bigger event than capturing a pawn or minor piece: 1x at a pawn,
+    // up to 1.6x at a queen. King is defensive-only (never truly captured) and stays
+    // at baseline so `ascension` keeps its own distinct, already-dramatic presentation.
+    victimDrama(type) {
+      const v = VALUE[type] ?? VALUE.p;
+      return 1 + Math.max(0, v - VALUE.p) * 0.075;
     }
     spawnCrosshair(cx, cy, S) {
       const frames = Math.max(8, Math.round(this.buildupMs / 16));
@@ -4244,13 +4255,17 @@
     }
     /* ================= EFFECTS ================= */
     spawn(id, cx, cy, S, victim) {
-      const lvl = this.intensity, cs = 0.5 + lvl / 13;
+      const lvl = this.intensity;
+      const drama = this.victimDrama(victim.type);
+      const cs = (0.5 + lvl / 13) * drama;
+      const sizeBoost = 1 + (drama - 1) * 0.5;
+      S *= sizeBoost;
       if (id === "nuke") {
         this.flashBlob(cx, cy, "#d9b3ff", S, 16);
         this.addP({ kind: "ring", x: cx, y: cy, r0: S * 0.15, r1: S * 2.7, lw: S * 0.16, color: "#b98cff", max: 22 });
         this.addP({ kind: "ring", x: cx, y: cy, r0: S * 0.1, r1: S * 1.7, lw: S * 0.09, color: "#ecd9ff", max: 15 });
         this.glyph(victim, cx, cy, S, "nuke", 18);
-        this.bigText("BOOM", "#cf9bff", cx, cy, 1);
+        this.bigText("BOOM", "#cf9bff", cx, cy, 1 * sizeBoost);
         let N = Math.round(46 * cs);
         for (let i = 0; i < N; i++) {
           const a = Math.random() * 6.28, sp = this.rand(3, 13);
@@ -4293,7 +4308,7 @@
         }
       } else if (id === "smash") {
         this.glyph(victim, cx, cy, S, "smash", 22);
-        this.bigText("POW!", "#ffd24a", cx, cy - S * 0.2, 1.25);
+        this.bigText("POW!", "#ffd24a", cx, cy - S * 0.2, 1.25 * sizeBoost);
         const N = Math.round(26 * cs);
         for (let i = 0; i < N; i++) {
           const dir = i % 2 ? 1 : -1;
@@ -4302,7 +4317,7 @@
       } else if (id === "pixel") {
         const val = VALUE[victim.type];
         this.glyph(victim, cx, cy, S, "pixel", 10);
-        this.bigText("+" + (val || 1), "#63e88a", cx, cy - S * 0.3, 0.95, "'Bungee',monospace,monospace");
+        this.bigText("+" + (val || 1), "#63e88a", cx, cy - S * 0.3, 0.95 * sizeBoost, "'Bungee',monospace,monospace");
         const pal = ["#ffffff", "#ffe14d", "#46d17a", "#5ec6ff", "#ff5edb", "#ff6a3d"];
         const N = Math.round(30 * cs);
         for (let i = 0; i < N; i++) {
@@ -4972,13 +4987,13 @@
     const ahead = center(`${FILES2[f]}${aheadR}`, size, blackO);
     return Math.sign(ahead.y - here.y) || -1;
   }
-  function squareGlow(ctx, p, sq, color, now, phase = 0) {
+  function squareGlow(ctx, p, sq, color, now, phase = 0, fade = 1) {
     const pulse = 0.55 + 0.45 * Math.sin(now / 330 + phase);
     cornerTicks(ctx, p.x, p.y, sq, color, {
       hs: sq / 2 - sq * 0.1,
       len: sq * 0.16,
       lw: Math.max(2, sq * 0.06),
-      alpha: 0.4 + 0.5 * pulse,
+      alpha: (0.4 + 0.5 * pulse) * fade,
       blur: sq * (0.2 + 0.35 * pulse)
     });
   }
@@ -5155,19 +5170,22 @@
     for (const s of pattern.squares) squareGlow(ctx, center(s, size, blackO), sq, color, now);
     microSparks(ctx, k.x, baseY + dir * sq * 0.6, sq, theme.spark, now, 7, 0.9, 0.6);
   }
-  function drawRooks(ctx, size, pattern, now, theme, blackO) {
+  function drawRooks(ctx, size, pattern, now, theme, blackO, fade = 1) {
     const color = colorFor(pattern, theme, blackO);
     const sq = size / 8;
     const a = center(pattern.line.from, size, blackO);
     const b = center(pattern.line.to, size, blackO);
     const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
     const cyc = now % 1700 / 1700;
-    squareGlow(ctx, a, sq, color, now);
-    squareGlow(ctx, b, sq, color, now, 1.4);
+    squareGlow(ctx, a, sq, color, now, 0, fade);
+    squareGlow(ctx, b, sq, color, now, 1.4, fade);
     if (cyc < 0.42) {
       const p = cyc / 0.42;
+      ctx.save();
+      ctx.globalAlpha = fade;
       energyBolt(ctx, a, { x: a.x + (mid.x - a.x) * p, y: a.y + (mid.y - a.y) * p }, sq, color);
       energyBolt(ctx, b, { x: b.x + (mid.x - b.x) * p, y: b.y + (mid.y - b.y) * p }, sq, color);
+      ctx.restore();
     } else {
       const p = (cyc - 0.42) / 0.58;
       const flash = Math.max(0, 1 - p * 4);
@@ -5177,7 +5195,7 @@
       ctx.lineCap = "round";
       ctx.shadowColor = color;
       ctx.shadowBlur = sq * 0.4;
-      ctx.globalAlpha = 0.5 + 0.3 * Math.sin(now / 250);
+      ctx.globalAlpha = (0.5 + 0.3 * Math.sin(now / 250)) * fade;
       ctx.lineWidth = Math.max(2, sq * 0.13);
       ctx.beginPath();
       ctx.moveTo(a.x, a.y);
@@ -5190,26 +5208,26 @@
         ctx.fillStyle = theme.spark;
         ctx.shadowColor = color;
         ctx.shadowBlur = sq * 0.8 * flash;
-        ctx.globalAlpha = flash;
+        ctx.globalAlpha = flash * fade;
         ctx.beginPath();
         ctx.arc(mid.x, mid.y, sq * 0.1 + sq * 0.3 * flash, 0, 6.2832);
         ctx.fill();
         ctx.restore();
       }
       const gp = now / 700 % 1;
-      microSparks(ctx, a.x + (b.x - a.x) * gp, a.y + (b.y - a.y) * gp, sq, theme.spark, now, 3, 0.18);
+      microSparks(ctx, a.x + (b.x - a.x) * gp, a.y + (b.y - a.y) * gp, sq, theme.spark, now, 3, 0.18, fade);
     }
   }
-  function drawBattery(ctx, size, pattern, now, theme, blackO) {
+  function drawBattery(ctx, size, pattern, now, theme, blackO, fade = 1) {
     const color = colorFor(pattern, theme, blackO);
     const sq = size / 8;
     const a = center(pattern.line.from, size, blackO);
     const b = center(pattern.line.to, size, blackO);
-    squareGlow(ctx, a, sq, color, now);
-    squareGlow(ctx, b, sq, color, now, 1);
+    squareGlow(ctx, a, sq, color, now, 0, fade);
+    squareGlow(ctx, b, sq, color, now, 1, fade);
     const cyc = now % 1500 / 1500;
     ctx.save();
-    ctx.globalAlpha = 0.35;
+    ctx.globalAlpha = 0.35 * fade;
     ctx.strokeStyle = color;
     ctx.lineWidth = Math.max(2, sq * 0.05);
     ctx.lineCap = "round";
@@ -5226,12 +5244,12 @@
       ctx.fillStyle = color;
       ctx.shadowColor = color;
       ctx.shadowBlur = sq * 0.6;
-      ctx.globalAlpha = 0.4 + 0.6 * p;
+      ctx.globalAlpha = (0.4 + 0.6 * p) * fade;
       ctx.beginPath();
       ctx.arc(hx, hy, sq * (0.08 + 0.06 * p), 0, 6.2832);
       ctx.fill();
       ctx.restore();
-      microSparks(ctx, hx, hy, sq, theme.spark, now, 4, 0.25, p);
+      microSparks(ctx, hx, hy, sq, theme.spark, now, 4, 0.25, p * fade);
     } else {
       const p = (cyc - 0.7) / 0.3;
       const f = Math.max(0, 1 - p);
@@ -5240,7 +5258,7 @@
       ctx.lineCap = "round";
       ctx.shadowColor = color;
       ctx.shadowBlur = sq * 0.8 * f;
-      ctx.globalAlpha = f;
+      ctx.globalAlpha = f * fade;
       ctx.strokeStyle = theme.spark;
       ctx.lineWidth = Math.max(2, sq * 0.16 * f);
       ctx.beginPath();
@@ -5250,13 +5268,13 @@
       ctx.strokeStyle = color;
       ctx.lineWidth = Math.max(1, sq * 0.06);
       for (const c of [a, b]) {
-        ctx.globalAlpha = f * 0.8;
+        ctx.globalAlpha = f * 0.8 * fade;
         ctx.beginPath();
         ctx.arc(c.x, c.y, sq * (0.3 + 0.5 * p), 0, 6.2832);
         ctx.stroke();
       }
       ctx.restore();
-      microSparks(ctx, b.x, b.y, sq, theme.spark, now, 8, 0.6, f);
+      microSparks(ctx, b.x, b.y, sq, theme.spark, now, 8, 0.6, f * fade);
     }
   }
   function lockBrackets(ctx, cx, cy, sq, color, close) {
@@ -5358,7 +5376,7 @@
       microSparks(ctx, back.x, back.y, sq, theme.spark, now, 6, 0.45, f);
     }
   }
-  function drawOutpost(ctx, size, pattern, now, theme, blackO) {
+  function drawOutpost(ctx, size, pattern, now, theme, blackO, fade = 1) {
     const color = colorFor(pattern, theme, blackO);
     const sq = size / 8;
     const c = center(pattern.squares[0], size, blackO);
@@ -5366,7 +5384,7 @@
     const pulse = cyc % 0.5 / 0.5;
     ctx.save();
     ctx.strokeStyle = color;
-    ctx.globalAlpha = 0.5 * (1 - pulse);
+    ctx.globalAlpha = 0.5 * (1 - pulse) * fade;
     ctx.lineWidth = Math.max(1, sq * 0.05);
     ctx.shadowColor = color;
     ctx.shadowBlur = sq * 0.3;
@@ -5379,6 +5397,7 @@
     const px = c.x + sq * 0.28, py = c.y - sq * 0.1;
     ctx.save();
     ctx.strokeStyle = color;
+    ctx.globalAlpha = fade;
     ctx.lineWidth = Math.max(2, sq * 0.05);
     ctx.lineCap = "round";
     ctx.shadowColor = color;
@@ -5389,7 +5408,7 @@
     ctx.stroke();
     const wave = Math.sin(now / 180) * sq * 0.05;
     ctx.fillStyle = color;
-    ctx.globalAlpha = 0.92 * rise;
+    ctx.globalAlpha = 0.92 * rise * fade;
     ctx.beginPath();
     ctx.moveTo(px, py - poleH);
     ctx.lineTo(px - sq * 0.32, py - poleH + sq * 0.1 + wave);
@@ -5397,7 +5416,7 @@
     ctx.closePath();
     ctx.fill();
     ctx.restore();
-    microSparks(ctx, c.x, c.y, sq, theme.spark, now, 6, 0.5, 0.7);
+    microSparks(ctx, c.x, c.y, sq, theme.spark, now, 6, 0.5, 0.7 * fade);
   }
   function drawPassedPawn(ctx, size, pattern, now, theme, blackO) {
     const color = colorFor(pattern, theme, blackO);
@@ -5609,20 +5628,20 @@
     ctx.stroke();
     ctx.restore();
   }
-  function drawPatternFx(ctx, size, pattern, now, theme = PATTERN_THEMES[0], blackO = false) {
+  function drawPatternFx(ctx, size, pattern, now, theme = PATTERN_THEMES[0], blackO = false, fade = 1) {
     switch (pattern.type) {
       case "fianchetto":
         return drawFianchetto(ctx, size, pattern, now, theme, blackO);
       case "rooks":
-        return drawRooks(ctx, size, pattern, now, theme, blackO);
+        return drawRooks(ctx, size, pattern, now, theme, blackO, fade);
       case "battery":
-        return drawBattery(ctx, size, pattern, now, theme, blackO);
+        return drawBattery(ctx, size, pattern, now, theme, blackO, fade);
       case "pin":
         return drawPin(ctx, size, pattern, now, theme, blackO);
       case "skewer":
         return drawSkewer(ctx, size, pattern, now, theme, blackO);
       case "outpost":
-        return drawOutpost(ctx, size, pattern, now, theme, blackO);
+        return drawOutpost(ctx, size, pattern, now, theme, blackO, fade);
       case "passed-pawn":
         return drawPassedPawn(ctx, size, pattern, now, theme, blackO);
       case "pawn-chain":
@@ -5643,23 +5662,32 @@
   }
 
   // src/pattern-overlay.js
+  var FADE_LIFECYCLE_TYPES = /* @__PURE__ */ new Set(["battery", "rooks", "outpost"]);
+  var INTRO_MS = 900;
+  var STEADY_FADE = 0.16;
+  function patternKey(pattern) {
+    return `${pattern.type}|${pattern.side}|${pattern.squares.join(",")}`;
+  }
   var PatternOverlay = class {
     constructor({
       document: document2 = globalThis.document,
       devicePixelRatio = globalThis.devicePixelRatio ?? 1,
       ResizeObserver = globalThis.ResizeObserver,
       getContext = (canvas) => canvas.getContext?.("2d"),
-      theme = PATTERN_THEMES[0]
+      theme = PATTERN_THEMES[0],
+      now = () => globalThis.performance?.now?.() ?? Date.now()
     } = {}) {
       this.document = document2;
       this.devicePixelRatio = devicePixelRatio;
       this.ResizeObserver = ResizeObserver;
       this.getContext = getContext;
       this.theme = theme;
+      this.now = now;
       this.canvas = null;
       this.board = null;
       this.resizeObserver = null;
       this.patterns = [];
+      this.firstSeen = /* @__PURE__ */ new Map();
       this.raf = null;
       this.last = 0;
     }
@@ -5697,6 +5725,15 @@
     // change or the overlay is cleared. Called on each position change.
     render(patterns) {
       this.patterns = patterns || [];
+      const liveKeys = new Set(this.patterns.map(patternKey));
+      for (const key of this.firstSeen.keys()) {
+        if (!liveKeys.has(key)) this.firstSeen.delete(key);
+      }
+      const now = this.now();
+      for (const pattern of this.patterns) {
+        const key = patternKey(pattern);
+        if (!this.firstSeen.has(key)) this.firstSeen.set(key, now);
+      }
       if (!this.canvas) this.attach();
       if (this.patterns.length === 0) {
         this._stop();
@@ -5707,8 +5744,17 @@
     }
     clear() {
       this._stop();
+      this.firstSeen.clear();
       const state = this.sync();
       if (state?.context) state.context.clearRect(0, 0, state.size, state.size);
+    }
+    // 1 during a fade-lifecycle pattern's one-time intro pulse, STEADY_FADE once it
+    // has settled; always 1 for patterns outside the fade lifecycle.
+    fadeFor(pattern, atMs) {
+      if (!FADE_LIFECYCLE_TYPES.has(pattern.type)) return 1;
+      const firstSeenAt = this.firstSeen.get(patternKey(pattern));
+      if (firstSeenAt == null) return 1;
+      return atMs - firstSeenAt < INTRO_MS ? 1 : STEADY_FADE;
     }
     _start() {
       if (this.raf != null) return;
@@ -5735,7 +5781,7 @@
       const { context, size, isBlackOrientation } = state;
       context.clearRect(0, 0, size, size);
       for (const pattern of this.patterns) {
-        drawPatternFx(context, size, pattern, now, this.theme, isBlackOrientation);
+        drawPatternFx(context, size, pattern, now, this.theme, isBlackOrientation, this.fadeFor(pattern, now));
       }
     }
   };
@@ -5847,7 +5893,8 @@
     function patternSig(snapshot) {
       if (!snapshot) return null;
       const moves = snapshot.sanMoves || [];
-      return `${snapshot.id}|${moves.length}|${moves[moves.length - 1] || ""}`;
+      const ply = snapshot.activePly ?? moves.length;
+      return `${snapshot.id}|${ply}|${moves[ply - 1] || ""}`;
     }
     function renderPatterns(snapshot, force) {
       if (!settings.patternsOn) {

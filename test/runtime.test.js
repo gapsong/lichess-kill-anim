@@ -139,6 +139,34 @@ test('patterns are rendered on scan when patternsOn is true', () => {
   assert.deepEqual(rendered[0], sentinel);
 });
 
+test('regression: a pattern hint (e.g. the 4-square king fortress) clears once its ply is navigated past, even though snapshot.id and move count stay the same', () => {
+  const doc = setupDoc();
+  const rendered = [];
+  const fakePatternOverlay = { render: (ps) => rendered.push(ps), clear() {} };
+  const fortress = [{ type: 'fortress', side: 'w', squares: ['g1', 'f2', 'g2', 'h2'], line: null, label: 'Festung' }];
+  // Simulates the analysis board: the full game is already loaded in the DOM
+  // (constant id / move count), only the active ply the user is looking at changes.
+  let snapshot = { id: 's1', sanMoves: ['O-O', 'e5', 'g4'], activePly: 1 };
+  let scan;
+  const rt = createRuntime(baseOpts(doc, {
+    createRenderer: (opts) => ({ ...opts, activeCount: 0, play() {}, tick() {} }),
+    patternOverlay: fakePatternOverlay,
+    readSnapshotFn: () => snapshot,
+    observerFactory: (cb) => { scan = cb; return { observe() {}, disconnect() {} }; },
+    // Stand-in for derivePosition + detectPatterns: the fortress is intact through
+    // ply 2, then g4 (ply 3) pushes the g-pawn and breaks it.
+    derivePositionFn: (snap) => ({ board: { ply: snap.activePly }, turn: 'w' }),
+    detectPatternsFn: (board) => (board.ply <= 2 ? fortress : [])
+  }));
+
+  rt.start();
+  assert.deepEqual(rendered.at(-1), fortress);
+
+  snapshot = { ...snapshot, activePly: 3 };
+  scan();
+  assert.deepEqual(rendered.at(-1), []);
+});
+
 test('patterns are cleared (not rendered) when patternsOn is false', () => {
   const doc = setupDoc();
   let cleared = 0;

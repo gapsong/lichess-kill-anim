@@ -96,3 +96,43 @@ test('default routing (null) keeps the built-in SIG table', () => {
   const r = new ParticleFxRenderer({ soundOn: false });
   assert.equal(r.effectFor({ attacker: { piece: 'q' }, victim: { piece: 'p' } }), 'nuke');
 });
+
+test('victimDrama scales with captured-piece value, queen highest, pawn baseline', () => {
+  const r = new ParticleFxRenderer({ soundOn: false });
+  assert.equal(r.victimDrama('p'), 1);
+  assert.ok(r.victimDrama('n') > r.victimDrama('p'));
+  assert.equal(r.victimDrama('n'), r.victimDrama('b'));
+  assert.ok(r.victimDrama('r') > r.victimDrama('n'));
+  assert.ok(r.victimDrama('q') > r.victimDrama('r'));
+  assert.equal(r.victimDrama('k'), 1);
+});
+
+test('a queen capture spawns noticeably more particles than a pawn/minor/rook capture (same attacker)', () => {
+  const counts = {};
+  for (const victimPiece of ['p', 'n', 'r', 'q']) {
+    const r = new ParticleFxRenderer({ soundOn: false });
+    r.play(reFor('r', victimPiece));
+    counts[victimPiece] = r.activeCount;
+  }
+  assert.ok(counts.q > counts.r);
+  assert.ok(counts.r > counts.n);
+  assert.ok(counts.n > counts.p);
+});
+
+test('a queen capture shakes the board harder and longer than a pawn capture', () => {
+  let queenOpts, pawnOpts;
+  const rq = new ParticleFxRenderer({ soundOn: false, onImpact: (re, opts) => { queenOpts = opts; } });
+  const rp = new ParticleFxRenderer({ soundOn: false, onImpact: (re, opts) => { pawnOpts = opts; } });
+  rq.play(reFor('r', 'q'));
+  rp.play(reFor('r', 'p'));
+  assert.ok(queenOpts.amplitude > pawnOpts.amplitude);
+  assert.ok(queenOpts.durationMs > pawnOpts.durationMs);
+});
+
+test('king victim does not get the material-value drama boost (ascension stays its own thing)', () => {
+  const r = new ParticleFxRenderer({ soundOn: false });
+  r.play(reFor('q', 'k'));
+  const rBaseline = new ParticleFxRenderer({ soundOn: false });
+  rBaseline.play(reFor('q', 'p'));
+  assert.equal(r.victimDrama('k'), r.victimDrama('p'));
+});
