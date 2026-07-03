@@ -128,3 +128,14 @@ test('hanging: still flagged when defended if the cheapest attacker is worth les
   const h = patterns('6k1/8/8/3R4/1n6/1B6/8/6K1 w - - 0 1').find((x) => x.type === 'hanging');
   assert.ok(h && h.squares[0] === 'd5');
 });
+
+test('hanging: an attacked, undefended pawn is flagged (same threshold as pieces)', () => {
+  const h = patterns('6k1/8/8/8/8/2p5/8/B5K1 w - - 0 1').find((x) => x.type === 'hanging');
+  assert.ok(h && h.side === 'b');
+  assert.equal(h.squares[0], 'c3');
+});
+
+test('not hanging: a pawn defended by another pawn is not flagged', () => {
+  const p = patterns('6k1/8/8/8/3p4/2p5/8/B5K1 w - - 0 1');
+  assert.ok(!has(p, 'hanging'));
+});
