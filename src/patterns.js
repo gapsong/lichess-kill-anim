@@ -220,7 +220,8 @@ function detectPinsAndSkewers(at) {
         const f2 = toSquare(second.file, second.rank);
         const v1 = VALUE[first.piece.type];
         const v2 = VALUE[second.piece.type];
-        if (v2 > v1) {
+        // A pinned pawn is too common/noisy to call out; only strong units (n/b/r/q) count as pinned.
+        if (v2 > v1 && first.piece.type !== 'p') {
           out.push({ type: 'pin', side: s.color, squares: [ssq, f1, f2], line: { from: ssq, to: f2 }, label: 'Pin' });
         } else if (v1 > v2) {
           out.push({ type: 'skewer', side: s.color, squares: [ssq, f1, f2], line: { from: ssq, to: f2 }, label: 'Spieß' });

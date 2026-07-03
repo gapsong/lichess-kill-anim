@@ -31,6 +31,11 @@ test('pin: bishop pins a knight to the king', () => {
   assert.ok(has(p, 'pin', 'w'));
 });
 
+test('no pin when the pinned unit is a pawn, not a piece', () => {
+  const p = patterns('8/8/8/5k2/8/3p4/8/1B5K w - - 0 1');
+  assert.ok(!has(p, 'pin'));
+});
+
 test('skewer: bishop skewers queen in front of a rook', () => {
   const p = patterns('k5r1/8/4q3/8/8/8/B7/6K1 w - - 0 1');
   assert.ok(has(p, 'skewer', 'w'));

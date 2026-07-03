@@ -450,7 +450,7 @@ function drawPassedPawn(ctx, size, pattern, now, theme, blackO) {
   ctx.shadowBlur = sq * 0.3;
   for (let i = 0; i < 3; i++) {
     const phase = ((now / 500) + i * 0.34) % 1;
-    const cy = c.y + dir * sq * (0.4 + phase * 2.2);
+    const cy = c.y + dir * sq * (0.3 + phase * 0.9);
     const wsp = sq * 0.22;
     ctx.globalAlpha = (1 - phase) * 0.9;
     ctx.beginPath();
@@ -462,8 +462,8 @@ function drawPassedPawn(ctx, size, pattern, now, theme, blackO) {
   ctx.restore();
   for (let i = 0; i < 4; i++) {
     const ph = ((now / 900) + i * 0.27) % 1;
-    const mx = c.x + Math.sin(now / 400 + i) * sq * 0.18;
-    const my = c.y + dir * sq * (0.3 + ph * 1.8);
+    const mx = c.x + Math.sin(now / 400 + i) * sq * 0.1;
+    const my = c.y + dir * sq * (0.2 + ph * 0.7);
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
     ctx.globalAlpha = (1 - ph) * 0.3;
@@ -569,18 +569,18 @@ function drawOpenFile(ctx, size, pattern, now, theme, blackO) {
   ctx.strokeStyle = color;
   ctx.lineCap = 'round';
   ctx.shadowColor = color;
-  ctx.shadowBlur = sq * 0.3;
-  ctx.globalAlpha = 0.28;
-  ctx.lineWidth = Math.max(2, sq * 0.1);
+  ctx.shadowBlur = sq * 0.15;
+  ctx.globalAlpha = 0.14;
+  ctx.lineWidth = Math.max(1, sq * 0.05);
   ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
   const p = (now / 1100) % 1;
   const px = a.x + (b.x - a.x) * p, py = a.y + (b.y - a.y) * p;
-  ctx.globalAlpha = 0.9;
+  ctx.globalAlpha = 0.55;
   ctx.fillStyle = theme.spark;
-  ctx.shadowBlur = sq * 0.5;
-  ctx.beginPath(); ctx.arc(px, py, sq * 0.12, 0, 6.2832); ctx.fill();
+  ctx.shadowBlur = sq * 0.25;
+  ctx.beginPath(); ctx.arc(px, py, sq * 0.08, 0, 6.2832); ctx.fill();
   ctx.restore();
-  microSparks(ctx, px, py, sq, theme.spark, now, 4, 0.25);
+  microSparks(ctx, px, py, sq, theme.spark, now, 3, 0.2, 0.6);
 }
 
 /* ---------- 🐴 Fork ---------- */
