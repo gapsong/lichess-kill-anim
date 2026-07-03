@@ -23,6 +23,7 @@ a dedicated overlay canvas above `cg-board`, without ever touching Lichess's own
   | Skewer | Fianchetto | Outpost |
   | Passed pawn | Pawn chain | Hotspot (square under heavy fire) |
   | Open file | King fortress | Fork |
+  | Hanging piece (subtlest hint) | | |
 
 ## Install
 

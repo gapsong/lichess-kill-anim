@@ -111,3 +111,20 @@ test('fork: a piece attacking two enemy pieces of equal-or-greater value', () =>
   assert.equal(f.squares[0], 'd5'); // the forking piece first
   assert.ok(f.squares.length - 1 >= 2); // two+ targets
 });
+
+test('hanging: an attacked, undefended piece is flagged', () => {
+  const h = patterns('6k1/8/2p1p3/3N4/8/8/8/6K1 w - - 0 1').find((x) => x.type === 'hanging');
+  assert.ok(h && h.side === 'w');
+  assert.equal(h.squares[0], 'd5');
+});
+
+test('not hanging: an equal-value attacker meets an adequately defended piece', () => {
+  const p = patterns('6k1/8/8/3N4/1N6/1b6/8/6K1 w - - 0 1');
+  assert.ok(!has(p, 'hanging'));
+});
+
+test('hanging: still flagged when defended if the cheapest attacker is worth less than the piece', () => {
+  // rook on d5 defended by a bishop, but a knight can take it and win the exchange
+  const h = patterns('6k1/8/8/3R4/1n6/1B6/8/6K1 w - - 0 1').find((x) => x.type === 'hanging');
+  assert.ok(h && h.squares[0] === 'd5');
+});

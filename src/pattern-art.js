@@ -445,14 +445,14 @@ function drawPassedPawn(ctx, size, pattern, now, theme, blackO) {
   ctx.globalCompositeOperation = 'lighter';
   ctx.strokeStyle = color;
   ctx.lineCap = 'round';
-  ctx.lineWidth = Math.max(2, sq * 0.06);
+  ctx.lineWidth = Math.max(1, sq * 0.035);
   ctx.shadowColor = color;
-  ctx.shadowBlur = sq * 0.3;
+  ctx.shadowBlur = sq * 0.15;
   for (let i = 0; i < 3; i++) {
-    const phase = ((now / 500) + i * 0.34) % 1;
-    const cy = c.y + dir * sq * (0.3 + phase * 0.9);
-    const wsp = sq * 0.22;
-    ctx.globalAlpha = (1 - phase) * 0.9;
+    const phase = ((now / 1800) + i * 0.34) % 1;
+    const cy = c.y + dir * sq * (0.3 + phase * 0.5);
+    const wsp = sq * 0.14;
+    ctx.globalAlpha = (1 - phase) * 0.35;
     ctx.beginPath();
     ctx.moveTo(c.x - wsp, cy + dir * wsp * 0.6);
     ctx.lineTo(c.x, cy);
@@ -461,16 +461,16 @@ function drawPassedPawn(ctx, size, pattern, now, theme, blackO) {
   }
   ctx.restore();
   for (let i = 0; i < 4; i++) {
-    const ph = ((now / 900) + i * 0.27) % 1;
-    const mx = c.x + Math.sin(now / 400 + i) * sq * 0.1;
-    const my = c.y + dir * sq * (0.2 + ph * 0.7);
+    const ph = ((now / 2200) + i * 0.27) % 1;
+    const mx = c.x + Math.sin(now / 1400 + i) * sq * 0.07;
+    const my = c.y + dir * sq * (0.15 + ph * 0.4);
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
-    ctx.globalAlpha = (1 - ph) * 0.3;
+    ctx.globalAlpha = (1 - ph) * 0.15;
     ctx.fillStyle = theme.spark;
     ctx.shadowColor = theme.spark;
-    ctx.shadowBlur = sq * 0.12;
-    ctx.beginPath(); ctx.arc(mx, my, sq * 0.03, 0, 6.2832); ctx.fill();
+    ctx.shadowBlur = sq * 0.08;
+    ctx.beginPath(); ctx.arc(mx, my, sq * 0.02, 0, 6.2832); ctx.fill();
     ctx.restore();
   }
 }
@@ -620,6 +620,23 @@ function drawGeneric(ctx, size, pattern, now, theme, blackO) {
   for (const square of pattern.squares) squareGlow(ctx, center(square, size, blackO), sq, color, now);
 }
 
+/* ---------- ⚠️ Hanging piece — deliberately the gentlest, least intrusive hint ---------- */
+function drawHanging(ctx, size, pattern, now, theme, blackO) {
+  const color = colorFor(pattern, theme, blackO);
+  const sq = size / 8;
+  const c = center(pattern.squares[0], size, blackO);
+  const cyc = (now % 3200) / 3200;
+  const pulse = 0.5 + 0.5 * Math.sin(cyc * 6.2832);
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = Math.max(1, sq * 0.02);
+  ctx.globalAlpha = 0.08 + 0.07 * pulse;
+  ctx.beginPath();
+  ctx.arc(c.x, c.y, sq * 0.32 + sq * 0.03 * pulse, 0, 6.2832);
+  ctx.stroke();
+  ctx.restore();
+}
+
 // Draws one pattern's animated highlight onto ctx. `size` is the board edge in px,
 // `blackO` whether the board is flipped (black at the bottom).
 export function drawPatternFx(ctx, size, pattern, now, theme = PATTERN_THEMES[0], blackO = false) {
@@ -636,6 +653,7 @@ export function drawPatternFx(ctx, size, pattern, now, theme = PATTERN_THEMES[0]
     case 'open-file': return drawOpenFile(ctx, size, pattern, now, theme, blackO);
     case 'fortress': return drawFortress(ctx, size, pattern, now, theme, blackO);
     case 'fork': return drawFork(ctx, size, pattern, now, theme, blackO);
+    case 'hanging': return drawHanging(ctx, size, pattern, now, theme, blackO);
     default: return drawGeneric(ctx, size, pattern, now, theme, blackO);
   }
 }
