@@ -80,10 +80,21 @@ export class ParticleFxRenderer {
 
   fireImpact(id, cx, cy, S, victim, renderEvent) {
     this.spawn(id, cx, cy, S, victim);
+    const drama = this.victimDrama(victim.type);
     const sh = this.intensity / 6;
-    const amp = (this.SHAKE[id] || 6) * sh;
-    this.onImpact?.(renderEvent, { amplitude: Math.max(2, amp), durationMs: 320 });
+    const amp = (this.SHAKE[id] || 6) * sh * drama;
+    const durationMs = Math.round(320 * (1 + (drama - 1) * 0.4));
+    this.onImpact?.(renderEvent, { amplitude: Math.max(2, amp), durationMs });
     if (this.soundOn) this.playSound(id);
+  }
+
+  // Scales a kill effect by the VALUE of the captured piece, so capturing a queen
+  // is a visibly bigger event than capturing a pawn or minor piece: 1x at a pawn,
+  // up to 1.6x at a queen. King is defensive-only (never truly captured) and stays
+  // at baseline so `ascension` keeps its own distinct, already-dramatic presentation.
+  victimDrama(type) {
+    const v = VALUE[type] ?? VALUE.p;
+    return 1 + Math.max(0, v - VALUE.p) * 0.075;
   }
 
   spawnCrosshair(cx, cy, S) {
@@ -392,7 +403,14 @@ export class ParticleFxRenderer {
 
   /* ================= EFFECTS ================= */
   spawn(id, cx, cy, S, victim) {
-    const lvl = this.intensity, cs = 0.5 + lvl / 13;
+    const lvl = this.intensity;
+    const drama = this.victimDrama(victim.type);
+    // Count scales at full drama strength (more particles); on-screen elements
+    // (glyph/flash/ring/beam, all sized off S) scale at half strength so a queen
+    // kill reads as bigger and bolder without the shapes turning cartoonish.
+    const cs = (0.5 + lvl / 13) * drama;
+    const sizeBoost = 1 + (drama - 1) * 0.5;
+    S *= sizeBoost;
 
     if (id === 'nuke') {
       // Void-Schockwelle (Dame): violetter Ring + Flash, dann violetter Feuerball
@@ -400,7 +418,7 @@ export class ParticleFxRenderer {
       this.addP({ kind: 'ring', x: cx, y: cy, r0: S * 0.15, r1: S * 2.7, lw: S * 0.16, color: '#b98cff', max: 22 });
       this.addP({ kind: 'ring', x: cx, y: cy, r0: S * 0.10, r1: S * 1.7, lw: S * 0.09, color: '#ecd9ff', max: 15 });
       this.glyph(victim, cx, cy, S, 'nuke', 18);
-      this.bigText('BOOM', '#cf9bff', cx, cy, 1.0);
+      this.bigText('BOOM', '#cf9bff', cx, cy, 1.0 * sizeBoost);
       let N = Math.round(46 * cs);
       for (let i = 0; i < N; i++) { const a = Math.random() * 6.28, sp = this.rand(3, 13); this.addP({ x: cx, y: cy, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, g: 0.06, drag: 0.93, max: this.rand(28, 52), size: this.rand(4, 11), color: this.pickc(['#f3e6ff', '#c9a0ff', '#9b5cff', '#5e23c9']), glow: 14, grow: 0.3 }); }
       N = Math.round(13 * cs);
@@ -430,14 +448,14 @@ export class ParticleFxRenderer {
     }
     else if (id === 'smash') {
       this.glyph(victim, cx, cy, S, 'smash', 22);
-      this.bigText('POW!', '#ffd24a', cx, cy - S * 0.2, 1.25);
+      this.bigText('POW!', '#ffd24a', cx, cy - S * 0.2, 1.25 * sizeBoost);
       const N = Math.round(26 * cs);
       for (let i = 0; i < N; i++) { const dir = (i % 2 ? 1 : -1); this.addP({ x: cx + dir * S * 0.1, y: cy + S * 0.2, vx: dir * this.rand(2, 8), vy: this.rand(-3, -0.5), g: 0.25, drag: 0.95, max: this.rand(26, 46), size: this.rand(3, 8), color: this.pickc(['#9b8b73', '#c2b393', '#7a6e5a']), grow: 0.3 }); }
     }
     else if (id === 'pixel') {
       const val = VALUE[victim.type];
       this.glyph(victim, cx, cy, S, 'pixel', 10);
-      this.bigText('+' + (val || 1), '#63e88a', cx, cy - S * 0.3, 0.95, "'Bungee',monospace,monospace");
+      this.bigText('+' + (val || 1), '#63e88a', cx, cy - S * 0.3, 0.95 * sizeBoost, "'Bungee',monospace,monospace");
       const pal = ['#ffffff', '#ffe14d', '#46d17a', '#5ec6ff', '#ff5edb', '#ff6a3d'];
       const N = Math.round(30 * cs);
       for (let i = 0; i < N; i++) { const a = Math.random() * 6.28, sp = this.rand(2, 9); this.addP({ x: cx, y: cy, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 2, g: 0.3, drag: 0.97, max: this.rand(22, 40), size: this.rand(4, 9), color: this.pickc(pal), shape: 'square', vrot: this.rand(-0.2, 0.2) }); }

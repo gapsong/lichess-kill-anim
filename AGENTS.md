@@ -53,8 +53,10 @@ Ohne Schritt 1 (Version-Bump) erkennt Tampermonkey kein Update, selbst wenn der 
 - `src/board-shake.js`: abklingender Screen-Shake auf `cg-board` (Vlambeer-Style), getriggert via `onImpact`
 - `src/userscript-entry.js`: Tampermonkey-Einstieg, Toasts und Canvas-Renderer
 - `src/patterns.js`: erkennt statische Formationen (`detectPatterns(board)` → battery/rooks/pin/skewer/fianchetto/outpost/passed-pawn)
-- `src/pattern-overlay.js`: persistente zweite Canvas-Schicht, zeichnet erkannte Muster (Linie + Glow + Label); Toggle `patternsOn`
-- `src/chess-state.js`: zusätzlich `derivePosition(snapshot)` → Endstellung (`chess.board()`) für die Muster-Erkennung
+- `src/pattern-overlay.js`: persistente zweite Canvas-Schicht, zeichnet erkannte Muster (Linie + Glow + Label); Toggle `patternsOn`; trackt pro Pattern (`type|side|squares`) den ersten Sichtungs-Zeitpunkt fuer die Intro/Faint-Lifecycle (`fadeFor`)
+- `src/chess-state.js`: zusätzlich `derivePosition(snapshot)` → Brett an `snapshot.activePly` (auf dem Analyse-Brett der gerade betrachtete Zug, nicht zwingend das Zugende) via `chess.board()`, fuer die Muster-Erkennung
+
+**Wichtig — `activePly` durchgaengig respektieren:** Auf dem Analyse-Brett sind alle Zuege bereits im DOM; `snapshot.activePly` (aus `move.active`) ist der Ply, den der Nutzer gerade ansieht, und kann kleiner sein als `sanMoves.length`. `CaptureEventStream` beruecksichtigt das schon lange. `derivePosition` und `patternSig` (in `src/runtime.js`) muessen das ebenfalls tun — sonst bleiben Pattern-Hints (z. B. eine 4-Felder-Festung) beim Zurueckblaettern auf dem Brett haengen, weil `snapshot.id`/`sanMoves.length` gleich bleiben und die Neuberechnung uebersprungen wird, obwohl die angezeigte Position eine andere ist. Neue Stellen, die Muster oder Captures aus einem `snapshot` ableiten, muessen `activePly` respektieren, sonst reisst dieselbe Bug-Klasse wieder auf.
 
 ### Build-Scripts
 
@@ -106,6 +108,14 @@ r.onImpact;                   // Callback(renderEvent, { amplitude, durationMs }
 | Fallback | `splatter` |
 
 Zusaetzliche Effekte im Pool (erreichbar ueber `mode: 'random'` oder fixe id): `inferno`, `vortex`, `shatter`.
+
+### Material-Skalierung nach geschlagener Figur (`victimDrama`)
+
+Unabhaengig vom Angreifer-Routing (SIG-Tabelle oben) skaliert `ParticleFxRenderer.victimDrama(victim.type)` jeden Effekt zusaetzlich nach dem Materialwert der GESCHLAGENEN Figur: Bauer/Minorfigur bleiben nahe Baseline, ein Turm ist spuerbar groesser, eine Dame ist der Hoehepunkt (bis 1.6x). Der Faktor fliesst in `spawn()` in die Partikelanzahl (`cs`, volle Staerke) und in eine gedaempfte `sizeBoost`-Variante von `S` (Glyph/Flash/Ring/Beam-Groessen, halbe Staerke), sowie in `fireImpact()` in Shake-Amplitude und -Dauer. Koenig bleibt bei Baseline (kein echter Capture, `ascension` ist ohnehin schon das dramatischste Preset). Neue Effekte sollten diesen Hebel weiterverwenden statt eine eigene Skalierung zu erfinden.
+
+### Intro/Faint-Lifecycle fuer "Connections"- und "State"-Pattern-Hints
+
+`battery`, `rooks` (Connections — verbinden zwei Felder mit einer Linie) und `outpost` (State — anhaltender positioneller Zustand) spielen beim ersten Erscheinen einen einmaligen starken Intro-Pulse (900ms, `INTRO_MS` in `src/pattern-overlay.js`), danach faellt die Deckkraft auf einen niedrigen Dauerzustand (`STEADY_FADE = 0.16`), solange das Pattern bestehen bleibt. `PatternOverlay` trackt dafuer pro Pattern-Key (`type|side|squares`) den ersten Sichtungs-Zeitpunkt (`firstSeen`-Map) und berechnet den Fade-Faktor ueber `fadeFor(pattern, now)`; `drawPatternFx(..., fade)` in `src/pattern-art.js` multipliziert ihn in jede `globalAlpha`-Zuweisung der drei betroffenen Zeichenfunktionen (nicht additiv verrechenbar, Canvas-`globalAlpha` ist immer ein absoluter Wert). Alle anderen Pattern-Typen ignorieren `fade` (Default 1) und animieren unveraendert in Dauerschleife. Verschwindet ein Pattern (nicht mehr in der `render()`-Liste), wird sein `firstSeen`-Eintrag geloescht — erscheint es spaeter erneut, gibt es einen frischen Intro-Pulse.
 
 Bei `routing === null` (Default) wird der Angreifer via `SIG`-Konstante geroutet; Opfer `k` hat Vorrang und liefert immer `ascension`. Die waehlbare Animation steuert `packId` (Registry `src/packs.js`, aufgeloest via `resolvePack`): `single` setzt `mode` auf einen festen Effekt, `theme` setzt `routing`/`fallback`.
 Bei `buildupMs > 0` erscheint zuerst ein Targeting-Reticle auf dem Opfer-Feld; nach Ablauf der Buildup-Zeit wird `fireImpact` aufgerufen und `onImpact` gefeuert (Board-Shake). Default `buildupMs` ist 0.
