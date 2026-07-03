@@ -51,7 +51,8 @@ const PATTERN_EXAMPLES = [
   { label: 'Open file', fen: '6k1/8/8/8/8/8/8/4R1K1 w - - 0 1' },
   { label: 'Fortress', fen: '6k1/5ppp/8/8/8/8/5PPP/6K1 w - - 0 1' },
   { label: 'Fork', fen: 'k7/2q1b3/8/3N4/8/8/8/6K1 w - - 0 1' },
-  { label: 'Hanging piece', fen: '6k1/1b6/8/3N4/8/8/8/6K1 w - - 0 1' }
+  { label: 'Hanging piece', fen: '6k1/1b6/8/3N4/8/8/8/6K1 w - - 0 1' },
+  { label: 'Hanging pawn', fen: '6k1/8/8/8/8/2p5/2P5/B5K1 w - - 0 1' }
 ];
 
 let installed = false;

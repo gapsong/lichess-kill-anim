@@ -364,9 +364,13 @@ function attackersOf(at, f, r, color) {
   return out;
 }
 
-// A piece is hanging if it is attacked and either undefended (free capture)
-// or defended so poorly that the cheapest attacker still wins material after
-// the recapture (one-ply exchange estimate, not a full SEE).
+// Any non-king unit (piece or pawn) is hanging if it is attacked and either
+// undefended (free capture) or defended so poorly that the cheapest attacker
+// still wins material after the recapture (one-ply exchange estimate, not a
+// full SEE). Pawns use the exact same threshold: since pawn value (1) is the
+// lowest on the board, a defended pawn can never lose the exchange, so a
+// pawn only trips this when it is genuinely undefended — ordinary tension
+// where either side has a pawn or piece backing it up stays quiet.
 function detectHangingPieces(at) {
   const out = [];
   for (let f = 0; f < 8; f++) {
