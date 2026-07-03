@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Lichess Kill Notifier
 // @namespace    dismo/lichess-kill
-// @version      4.0.0
+// @version      4.0.1
 // @description  Killing-Animationen bei Schlagzuegen mit eigenem Chess-State statt fragilem Board-DOM.
 // @author       Dismo
 // @match        https://lichess.org/*
@@ -4776,7 +4776,7 @@
           const f2 = toSquare(second.file, second.rank);
           const v1 = VALUE2[first.piece.type];
           const v2 = VALUE2[second.piece.type];
-          if (v2 > v1) {
+          if (v2 > v1 && first.piece.type !== "p") {
             out.push({ type: "pin", side: s.color, squares: [ssq, f1, f2], line: { from: ssq, to: f2 }, label: "Pin" });
           } else if (v1 > v2) {
             out.push({ type: "skewer", side: s.color, squares: [ssq, f1, f2], line: { from: ssq, to: f2 }, label: "Spie\xDF" });
@@ -5378,7 +5378,7 @@
     ctx.shadowBlur = sq * 0.3;
     for (let i = 0; i < 3; i++) {
       const phase = (now / 500 + i * 0.34) % 1;
-      const cy = c.y + dir * sq * (0.4 + phase * 2.2);
+      const cy = c.y + dir * sq * (0.3 + phase * 0.9);
       const wsp = sq * 0.22;
       ctx.globalAlpha = (1 - phase) * 0.9;
       ctx.beginPath();
@@ -5390,8 +5390,8 @@
     ctx.restore();
     for (let i = 0; i < 4; i++) {
       const ph = (now / 900 + i * 0.27) % 1;
-      const mx = c.x + Math.sin(now / 400 + i) * sq * 0.18;
-      const my = c.y + dir * sq * (0.3 + ph * 1.8);
+      const mx = c.x + Math.sin(now / 400 + i) * sq * 0.1;
+      const my = c.y + dir * sq * (0.2 + ph * 0.7);
       ctx.save();
       ctx.globalCompositeOperation = "lighter";
       ctx.globalAlpha = (1 - ph) * 0.3;
@@ -5501,23 +5501,23 @@
     ctx.strokeStyle = color;
     ctx.lineCap = "round";
     ctx.shadowColor = color;
-    ctx.shadowBlur = sq * 0.3;
-    ctx.globalAlpha = 0.28;
-    ctx.lineWidth = Math.max(2, sq * 0.1);
+    ctx.shadowBlur = sq * 0.15;
+    ctx.globalAlpha = 0.14;
+    ctx.lineWidth = Math.max(1, sq * 0.05);
     ctx.beginPath();
     ctx.moveTo(a.x, a.y);
     ctx.lineTo(b.x, b.y);
     ctx.stroke();
     const p = now / 1100 % 1;
     const px = a.x + (b.x - a.x) * p, py = a.y + (b.y - a.y) * p;
-    ctx.globalAlpha = 0.9;
+    ctx.globalAlpha = 0.55;
     ctx.fillStyle = theme.spark;
-    ctx.shadowBlur = sq * 0.5;
+    ctx.shadowBlur = sq * 0.25;
     ctx.beginPath();
-    ctx.arc(px, py, sq * 0.12, 0, 6.2832);
+    ctx.arc(px, py, sq * 0.08, 0, 6.2832);
     ctx.fill();
     ctx.restore();
-    microSparks(ctx, px, py, sq, theme.spark, now, 4, 0.25);
+    microSparks(ctx, px, py, sq, theme.spark, now, 3, 0.2, 0.6);
   }
   function drawFork(ctx, size, pattern, now, theme, blackO) {
     const color = colorFor(pattern, theme, blackO);
@@ -5869,7 +5869,7 @@
   var DEFAULT_SETTINGS = {
     enabled: true,
     packId: "signature",
-    intensity: 7,
+    intensity: 5,
     soundOn: true,
     buildupMs: 0,
     patternsOn: true,

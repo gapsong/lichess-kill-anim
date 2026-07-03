@@ -5,7 +5,7 @@ export const KNOWN_PIECES = ['p', 'n', 'b', 'r', 'q', 'k'];
 export const DEFAULT_SETTINGS = {
   enabled: true,
   packId: 'signature',
-  intensity: 7,
+  intensity: 5,
   soundOn: true,
   buildupMs: 0,
   patternsOn: true,
