@@ -3617,6 +3617,7 @@
       this.snapshotId = null;
       this.seen = /* @__PURE__ */ new Set();
       this.lastActivePly = null;
+      this.primed = false;
     }
     next(snapshot) {
       if (!snapshot) return [];
@@ -3624,9 +3625,19 @@
         this.snapshotId = snapshot.id;
         this.seen = /* @__PURE__ */ new Set();
         this.lastActivePly = null;
+        this.primed = false;
       }
       const allEvents = deriveEvents(snapshot);
       const activePly = snapshot.activePly ?? null;
+      if (!this.primed) {
+        this.primed = true;
+        const baselineLimit = activePly ?? Infinity;
+        for (const event of allEvents) {
+          if (event.ply <= baselineLimit) this.seen.add(eventKey(event));
+        }
+        this.lastActivePly = activePly;
+        return [];
+      }
       if (activePly != null) {
         if (activePly === this.lastActivePly) return [];
         this.lastActivePly = activePly;

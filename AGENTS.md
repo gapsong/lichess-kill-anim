@@ -46,7 +46,7 @@ Ohne Schritt 1 (Version-Bump) erkennt Tampermonkey kein Update, selbst wenn der 
 - `src/chess-state.js`: erzeugt CaptureEvents aus Start-FEN und SAN-Zugliste via `chess.js`
 - `src/move-feed.js`: liest Lichess-Zuglisten aus dem DOM
 - `src/board-geometry.js`: rechnet Squares in Pixelkoordinaten um
-- `src/event-stream.js`: dedupliziert Events ueber MutationObserver-Scans
+- `src/event-stream.js`: dedupliziert Events ueber MutationObserver-Scans. **Silent-Baseline beim Kontext-Eintritt:** Der erste Scan eines neuen Kontexts (`snapshot.id` gewechselt, `primed`-Flag zurueckgesetzt) darf keine Animation feuern — sonst spielen beim Betreten einer laufenden Partie (TV, Refresh, Analyse mit vorhandenen Zuegen) *alle* bereits gespielten Captures auf einmal ab. Deshalb seedet der erste Scan alle bereits auf dem Brett liegenden Captures still in `seen` (Limit `activePly ?? Infinity`, damit auf dem Analyse-Brett nur bis zum betrachteten Ply gebaselinet wird und Vorwaertsblaettern auf einen spaeteren Capture weiterhin feuert) und liefert `[]`. Erst Captures, die in einem *spaeteren* Scan neu auftauchen, feuern.
 - `src/render-event.js`: reichert CaptureEvents mit board-lokalen Canvas-Koordinaten an
 - `src/canvas-overlay.js`: verwaltet ein board-lokales Canvas ueber `cg-board`
 - `src/particle-fx-renderer.js`: Live-Partikel-Engine; zeichnet alle Effekte direkt per Canvas-API (kein Spritesheet); unterstuetzt `buildupMs`-Crosshair vor Impact

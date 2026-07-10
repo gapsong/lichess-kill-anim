@@ -9,6 +9,7 @@ export class CaptureEventStream {
     this.snapshotId = null;
     this.seen = new Set();
     this.lastActivePly = null;
+    this.primed = false;
   }
 
   next(snapshot) {
@@ -18,10 +19,27 @@ export class CaptureEventStream {
       this.snapshotId = snapshot.id;
       this.seen = new Set();
       this.lastActivePly = null;
+      this.primed = false;
     }
 
     const allEvents = deriveEvents(snapshot);
     const activePly = snapshot.activePly ?? null;
+
+    // First scan of a new context: seed every capture already on the board as a
+    // silent baseline so entering a game with prior captures fires nothing. Only
+    // captures that first appear in a later scan emit. On the analysis board only
+    // captures up to the viewed ply are already "on the board", so advancing the
+    // cursor to a further capture still fires; on the live/TV board (activePly
+    // null) every played capture is baselined.
+    if (!this.primed) {
+      this.primed = true;
+      const baselineLimit = activePly ?? Infinity;
+      for (const event of allEvents) {
+        if (event.ply <= baselineLimit) this.seen.add(eventKey(event));
+      }
+      this.lastActivePly = activePly;
+      return [];
+    }
 
     if (activePly != null) {
       if (activePly === this.lastActivePly) return [];
