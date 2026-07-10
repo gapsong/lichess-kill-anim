@@ -34,11 +34,14 @@ function forwardDir(square, side, size, blackO) {
 }
 
 /* ---------- shared FX ---------- */
-function squareGlow(ctx, p, sq, color, now, phase = 0) {
+// `fade` is the intro/steady-state multiplier PatternOverlay computes for
+// "connections" (battery, rooks) and "state" (outpost) patterns: 1 during their
+// one-time intro pulse, a low constant once they settle into their resting state.
+function squareGlow(ctx, p, sq, color, now, phase = 0, fade = 1) {
   const pulse = 0.55 + 0.45 * Math.sin(now / 330 + phase);
   cornerTicks(ctx, p.x, p.y, sq, color, {
     hs: sq / 2 - sq * 0.1, len: sq * 0.16, lw: Math.max(2, sq * 0.06),
-    alpha: 0.4 + 0.5 * pulse, blur: sq * (0.2 + 0.35 * pulse)
+    alpha: (0.4 + 0.5 * pulse) * fade, blur: sq * (0.2 + 0.35 * pulse)
   });
 }
 
@@ -215,19 +218,22 @@ function drawFortress(ctx, size, pattern, now, theme, blackO) {
 }
 
 /* ---------- 🏰 Doubled/connected rooks ---------- */
-function drawRooks(ctx, size, pattern, now, theme, blackO) {
+function drawRooks(ctx, size, pattern, now, theme, blackO, fade = 1) {
   const color = colorFor(pattern, theme, blackO);
   const sq = size / 8;
   const a = center(pattern.line.from, size, blackO);
   const b = center(pattern.line.to, size, blackO);
   const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
   const cyc = (now % 1700) / 1700;
-  squareGlow(ctx, a, sq, color, now);
-  squareGlow(ctx, b, sq, color, now, 1.4);
+  squareGlow(ctx, a, sq, color, now, 0, fade);
+  squareGlow(ctx, b, sq, color, now, 1.4, fade);
   if (cyc < 0.42) {
     const p = cyc / 0.42;
+    ctx.save();
+    ctx.globalAlpha = fade;
     energyBolt(ctx, a, { x: a.x + (mid.x - a.x) * p, y: a.y + (mid.y - a.y) * p }, sq, color);
     energyBolt(ctx, b, { x: b.x + (mid.x - b.x) * p, y: b.y + (mid.y - b.y) * p }, sq, color);
+    ctx.restore();
   } else {
     const p = (cyc - 0.42) / 0.58;
     const flash = Math.max(0, 1 - p * 4);
@@ -237,7 +243,7 @@ function drawRooks(ctx, size, pattern, now, theme, blackO) {
     ctx.lineCap = 'round';
     ctx.shadowColor = color;
     ctx.shadowBlur = sq * 0.4;
-    ctx.globalAlpha = 0.5 + 0.3 * Math.sin(now / 250);
+    ctx.globalAlpha = (0.5 + 0.3 * Math.sin(now / 250)) * fade;
     ctx.lineWidth = Math.max(2, sq * 0.13);
     ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
     ctx.restore();
@@ -247,26 +253,26 @@ function drawRooks(ctx, size, pattern, now, theme, blackO) {
       ctx.fillStyle = theme.spark;
       ctx.shadowColor = color;
       ctx.shadowBlur = sq * 0.8 * flash;
-      ctx.globalAlpha = flash;
+      ctx.globalAlpha = flash * fade;
       ctx.beginPath(); ctx.arc(mid.x, mid.y, sq * 0.1 + sq * 0.3 * flash, 0, 6.2832); ctx.fill();
       ctx.restore();
     }
     const gp = (now / 700) % 1;
-    microSparks(ctx, a.x + (b.x - a.x) * gp, a.y + (b.y - a.y) * gp, sq, theme.spark, now, 3, 0.18);
+    microSparks(ctx, a.x + (b.x - a.x) * gp, a.y + (b.y - a.y) * gp, sq, theme.spark, now, 3, 0.18, fade);
   }
 }
 
 /* ---------- 💥 Battery ---------- */
-function drawBattery(ctx, size, pattern, now, theme, blackO) {
+function drawBattery(ctx, size, pattern, now, theme, blackO, fade = 1) {
   const color = colorFor(pattern, theme, blackO);
   const sq = size / 8;
   const a = center(pattern.line.from, size, blackO);
   const b = center(pattern.line.to, size, blackO);
-  squareGlow(ctx, a, sq, color, now);
-  squareGlow(ctx, b, sq, color, now, 1.0);
+  squareGlow(ctx, a, sq, color, now, 0, fade);
+  squareGlow(ctx, b, sq, color, now, 1.0, fade);
   const cyc = (now % 1500) / 1500;
   ctx.save();
-  ctx.globalAlpha = 0.35;
+  ctx.globalAlpha = 0.35 * fade;
   ctx.strokeStyle = color;
   ctx.lineWidth = Math.max(2, sq * 0.05);
   ctx.lineCap = 'round';
@@ -280,10 +286,10 @@ function drawBattery(ctx, size, pattern, now, theme, blackO) {
     ctx.fillStyle = color;
     ctx.shadowColor = color;
     ctx.shadowBlur = sq * 0.6;
-    ctx.globalAlpha = 0.4 + 0.6 * p;
+    ctx.globalAlpha = (0.4 + 0.6 * p) * fade;
     ctx.beginPath(); ctx.arc(hx, hy, sq * (0.08 + 0.06 * p), 0, 6.2832); ctx.fill();
     ctx.restore();
-    microSparks(ctx, hx, hy, sq, theme.spark, now, 4, 0.25, p);
+    microSparks(ctx, hx, hy, sq, theme.spark, now, 4, 0.25, p * fade);
   } else {
     const p = (cyc - 0.7) / 0.3;
     const f = Math.max(0, 1 - p);
@@ -292,18 +298,18 @@ function drawBattery(ctx, size, pattern, now, theme, blackO) {
     ctx.lineCap = 'round';
     ctx.shadowColor = color;
     ctx.shadowBlur = sq * 0.8 * f;
-    ctx.globalAlpha = f;
+    ctx.globalAlpha = f * fade;
     ctx.strokeStyle = theme.spark;
     ctx.lineWidth = Math.max(2, sq * 0.16 * f);
     ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
     ctx.strokeStyle = color;
     ctx.lineWidth = Math.max(1, sq * 0.06);
     for (const c of [a, b]) {
-      ctx.globalAlpha = f * 0.8;
+      ctx.globalAlpha = f * 0.8 * fade;
       ctx.beginPath(); ctx.arc(c.x, c.y, sq * (0.3 + 0.5 * p), 0, 6.2832); ctx.stroke();
     }
     ctx.restore();
-    microSparks(ctx, b.x, b.y, sq, theme.spark, now, 8, 0.6, f);
+    microSparks(ctx, b.x, b.y, sq, theme.spark, now, 8, 0.6, f * fade);
   }
 }
 
@@ -397,7 +403,7 @@ function drawSkewer(ctx, size, pattern, now, theme, blackO) {
 }
 
 /* ---------- 🚩 Outpost ---------- */
-function drawOutpost(ctx, size, pattern, now, theme, blackO) {
+function drawOutpost(ctx, size, pattern, now, theme, blackO, fade = 1) {
   const color = colorFor(pattern, theme, blackO);
   const sq = size / 8;
   const c = center(pattern.squares[0], size, blackO);
@@ -405,7 +411,7 @@ function drawOutpost(ctx, size, pattern, now, theme, blackO) {
   const pulse = (cyc % 0.5) / 0.5;
   ctx.save();
   ctx.strokeStyle = color;
-  ctx.globalAlpha = 0.5 * (1 - pulse);
+  ctx.globalAlpha = 0.5 * (1 - pulse) * fade;
   ctx.lineWidth = Math.max(1, sq * 0.05);
   ctx.shadowColor = color;
   ctx.shadowBlur = sq * 0.3;
@@ -416,6 +422,7 @@ function drawOutpost(ctx, size, pattern, now, theme, blackO) {
   const px = c.x + sq * 0.28, py = c.y - sq * 0.1;
   ctx.save();
   ctx.strokeStyle = color;
+  ctx.globalAlpha = fade;
   ctx.lineWidth = Math.max(2, sq * 0.05);
   ctx.lineCap = 'round';
   ctx.shadowColor = color;
@@ -423,7 +430,7 @@ function drawOutpost(ctx, size, pattern, now, theme, blackO) {
   ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(px, py - poleH); ctx.stroke();
   const wave = Math.sin(now / 180) * sq * 0.05;
   ctx.fillStyle = color;
-  ctx.globalAlpha = 0.92 * rise;
+  ctx.globalAlpha = 0.92 * rise * fade;
   ctx.beginPath();
   ctx.moveTo(px, py - poleH);
   ctx.lineTo(px - sq * 0.32, py - poleH + sq * 0.1 + wave);
@@ -431,7 +438,7 @@ function drawOutpost(ctx, size, pattern, now, theme, blackO) {
   ctx.closePath();
   ctx.fill();
   ctx.restore();
-  microSparks(ctx, c.x, c.y, sq, theme.spark, now, 6, 0.5, 0.7);
+  microSparks(ctx, c.x, c.y, sq, theme.spark, now, 6, 0.5, 0.7 * fade);
 }
 
 /* ---------- 🏃 Passed pawn ---------- */
@@ -445,14 +452,14 @@ function drawPassedPawn(ctx, size, pattern, now, theme, blackO) {
   ctx.globalCompositeOperation = 'lighter';
   ctx.strokeStyle = color;
   ctx.lineCap = 'round';
-  ctx.lineWidth = Math.max(2, sq * 0.06);
+  ctx.lineWidth = Math.max(1, sq * 0.035);
   ctx.shadowColor = color;
-  ctx.shadowBlur = sq * 0.3;
+  ctx.shadowBlur = sq * 0.15;
   for (let i = 0; i < 3; i++) {
-    const phase = ((now / 500) + i * 0.34) % 1;
-    const cy = c.y + dir * sq * (0.4 + phase * 2.2);
-    const wsp = sq * 0.22;
-    ctx.globalAlpha = (1 - phase) * 0.9;
+    const phase = ((now / 1800) + i * 0.34) % 1;
+    const cy = c.y + dir * sq * (0.3 + phase * 0.5);
+    const wsp = sq * 0.14;
+    ctx.globalAlpha = (1 - phase) * 0.35;
     ctx.beginPath();
     ctx.moveTo(c.x - wsp, cy + dir * wsp * 0.6);
     ctx.lineTo(c.x, cy);
@@ -461,16 +468,16 @@ function drawPassedPawn(ctx, size, pattern, now, theme, blackO) {
   }
   ctx.restore();
   for (let i = 0; i < 4; i++) {
-    const ph = ((now / 900) + i * 0.27) % 1;
-    const mx = c.x + Math.sin(now / 400 + i) * sq * 0.18;
-    const my = c.y + dir * sq * (0.3 + ph * 1.8);
+    const ph = ((now / 2200) + i * 0.27) % 1;
+    const mx = c.x + Math.sin(now / 1400 + i) * sq * 0.07;
+    const my = c.y + dir * sq * (0.15 + ph * 0.4);
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
-    ctx.globalAlpha = (1 - ph) * 0.3;
+    ctx.globalAlpha = (1 - ph) * 0.15;
     ctx.fillStyle = theme.spark;
     ctx.shadowColor = theme.spark;
-    ctx.shadowBlur = sq * 0.12;
-    ctx.beginPath(); ctx.arc(mx, my, sq * 0.03, 0, 6.2832); ctx.fill();
+    ctx.shadowBlur = sq * 0.08;
+    ctx.beginPath(); ctx.arc(mx, my, sq * 0.02, 0, 6.2832); ctx.fill();
     ctx.restore();
   }
 }
@@ -569,18 +576,18 @@ function drawOpenFile(ctx, size, pattern, now, theme, blackO) {
   ctx.strokeStyle = color;
   ctx.lineCap = 'round';
   ctx.shadowColor = color;
-  ctx.shadowBlur = sq * 0.3;
-  ctx.globalAlpha = 0.28;
-  ctx.lineWidth = Math.max(2, sq * 0.1);
+  ctx.shadowBlur = sq * 0.15;
+  ctx.globalAlpha = 0.14;
+  ctx.lineWidth = Math.max(1, sq * 0.05);
   ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
   const p = (now / 1100) % 1;
   const px = a.x + (b.x - a.x) * p, py = a.y + (b.y - a.y) * p;
-  ctx.globalAlpha = 0.9;
+  ctx.globalAlpha = 0.55;
   ctx.fillStyle = theme.spark;
-  ctx.shadowBlur = sq * 0.5;
-  ctx.beginPath(); ctx.arc(px, py, sq * 0.12, 0, 6.2832); ctx.fill();
+  ctx.shadowBlur = sq * 0.25;
+  ctx.beginPath(); ctx.arc(px, py, sq * 0.08, 0, 6.2832); ctx.fill();
   ctx.restore();
-  microSparks(ctx, px, py, sq, theme.spark, now, 4, 0.25);
+  microSparks(ctx, px, py, sq, theme.spark, now, 3, 0.2, 0.6);
 }
 
 /* ---------- 🐴 Fork ---------- */
@@ -620,22 +627,44 @@ function drawGeneric(ctx, size, pattern, now, theme, blackO) {
   for (const square of pattern.squares) squareGlow(ctx, center(square, size, blackO), sq, color, now);
 }
 
+/* ---------- ⚠️ Hanging piece — deliberately the gentlest, least intrusive hint ---------- */
+function drawHanging(ctx, size, pattern, now, theme, blackO) {
+  const color = colorFor(pattern, theme, blackO);
+  const sq = size / 8;
+  const c = center(pattern.squares[0], size, blackO);
+  const cyc = (now % 3200) / 3200;
+  const pulse = 0.5 + 0.5 * Math.sin(cyc * 6.2832);
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = Math.max(1, sq * 0.02);
+  ctx.globalAlpha = 0.08 + 0.07 * pulse;
+  ctx.beginPath();
+  ctx.arc(c.x, c.y, sq * 0.32 + sq * 0.03 * pulse, 0, 6.2832);
+  ctx.stroke();
+  ctx.restore();
+}
+
 // Draws one pattern's animated highlight onto ctx. `size` is the board edge in px,
-// `blackO` whether the board is flipped (black at the bottom).
-export function drawPatternFx(ctx, size, pattern, now, theme = PATTERN_THEMES[0], blackO = false) {
+// `blackO` whether the board is flipped (black at the bottom). `fade` (1 = full
+// strength) is only honoured by the "connections" (battery, rooks) and "state"
+// (outpost) patterns, which PatternOverlay drops to a low, steady value once their
+// one-time intro pulse has played; every other pattern always renders at full
+// strength and simply ignores it.
+export function drawPatternFx(ctx, size, pattern, now, theme = PATTERN_THEMES[0], blackO = false, fade = 1) {
   switch (pattern.type) {
     case 'fianchetto': return drawFianchetto(ctx, size, pattern, now, theme, blackO);
-    case 'rooks': return drawRooks(ctx, size, pattern, now, theme, blackO);
-    case 'battery': return drawBattery(ctx, size, pattern, now, theme, blackO);
+    case 'rooks': return drawRooks(ctx, size, pattern, now, theme, blackO, fade);
+    case 'battery': return drawBattery(ctx, size, pattern, now, theme, blackO, fade);
     case 'pin': return drawPin(ctx, size, pattern, now, theme, blackO);
     case 'skewer': return drawSkewer(ctx, size, pattern, now, theme, blackO);
-    case 'outpost': return drawOutpost(ctx, size, pattern, now, theme, blackO);
+    case 'outpost': return drawOutpost(ctx, size, pattern, now, theme, blackO, fade);
     case 'passed-pawn': return drawPassedPawn(ctx, size, pattern, now, theme, blackO);
     case 'pawn-chain': return drawPawnChain(ctx, size, pattern, now, theme, blackO);
     case 'hotspot': return drawHotspot(ctx, size, pattern, now, theme, blackO);
     case 'open-file': return drawOpenFile(ctx, size, pattern, now, theme, blackO);
     case 'fortress': return drawFortress(ctx, size, pattern, now, theme, blackO);
     case 'fork': return drawFork(ctx, size, pattern, now, theme, blackO);
+    case 'hanging': return drawHanging(ctx, size, pattern, now, theme, blackO);
     default: return drawGeneric(ctx, size, pattern, now, theme, blackO);
   }
 }

@@ -13,9 +13,14 @@ a dedicated overlay canvas above `cg-board`, without ever touching Lichess's own
 
 - **Kill animations** — each attacking piece gets a signature effect: queen → `nuke` (violet void
   shockwave), rook → `smash`, knight → `slash`, bishop → `zap`, pawn → `pixel`, a captured king →
-  `ascension`. Optional WebAudio SFX and a subtle board shake on queen captures.
+  `ascension`. Optional WebAudio SFX and a subtle board shake on queen captures. The effect scales
+  with the *captured* piece's material value too, independent of the attacker: taking a queen spawns
+  noticeably more/bigger particles and a harder, longer board shake than taking a pawn or minor
+  piece, so a queen kill reads as the clear crescendo of the game.
 - **Pattern hints** — the position is analysed live and matching formations are highlighted with
-  an animated effect (green = your side, red = the opponent):
+  an animated effect (green = your side, red = the opponent). Hints stay tied to whichever position
+  you're actually looking at, including when scrubbing back through an analysis board, and clear as
+  soon as their triggering formation is no longer on the board:
 
   | | | |
   |---|---|---|
@@ -23,6 +28,11 @@ a dedicated overlay canvas above `cg-board`, without ever touching Lichess's own
   | Skewer | Fianchetto | Outpost |
   | Passed pawn | Pawn chain | Hotspot (square under heavy fire) |
   | Open file | King fortress | Fork |
+  | Hanging piece or pawn (subtlest hint) | | |
+
+  Battery, connected rooks and outpost play one strong intro pulse the moment they appear, then
+  settle to a faint, low-opacity reminder for as long as the formation stays on the board — so a
+  long-lived positional feature doesn't keep flashing at full strength move after move.
 
 ## Install
 
@@ -42,12 +52,21 @@ A hosted Web Store build is not published yet — see `store/SUBMIT.md`.
 
 ### Tampermonkey userscript
 
+**One-click install (recommended):** with Tampermonkey installed, open
+[this raw Gist URL](https://gist.githubusercontent.com/gapsong/8b78fdf058b436e5b439b86ef2a816b4/raw/lichess-kill-notifier.user.js)
+and click **Install**.
+Tampermonkey checks the Gist's `@version` periodically and auto-updates when a new build is
+published there, so you only install once.
+
+**Copy-paste (fallback):**
+
 ```bash
 npm run build          # -> lichess-kill-notifier.user.js
 ```
 
 Tampermonkey → **Create new script** → paste the contents of `lichess-kill-notifier.user.js` → save.
-The userscript runs the same engine with default settings (no popup).
+The userscript runs the same engine with default settings (no popup). With this method you must
+repeat the copy-paste manually for future updates.
 
 ## Animation gallery
 
@@ -97,15 +116,15 @@ Source lives in `src/`; the three builds bundle it (including `chess.js`) via es
 | File | Purpose |
 |------|---------|
 | `src/move-feed.js` | Reads the SAN move list + active ply from the Lichess DOM |
-| `src/chess-state.js` | `deriveEvents` (captures) and `derivePosition` (final board) via chess.js |
+| `src/chess-state.js` | `deriveEvents` (captures) and `derivePosition` (board at `activePly`, or the final move) via chess.js |
 | `src/event-stream.js` | Deduplicates capture events; tracks the active ply on analysis |
 | `src/board-geometry.js` | Converts squares to board-local pixel coordinates |
 | `src/canvas-overlay.js` | Manages the `#lichess-kill-overlay` (effect) canvas |
-| `src/particle-fx-renderer.js` | Live particle engine; signature routing; WebAudio SFX; crosshair buildup |
+| `src/particle-fx-renderer.js` | Live particle engine; signature routing; WebAudio SFX; crosshair buildup; scales count/size/shake by the captured piece's material value (`victimDrama`) |
 | `src/board-shake.js` | Vlambeer-style screen shake, triggered via `onImpact` |
 | `src/patterns.js` | `detectPatterns(board)` → the 12 static formations |
-| `src/pattern-art.js` | Shared animated highlight drawing (per-pattern bespoke FX + themes) |
-| `src/pattern-overlay.js` | Persistent `#lichess-pattern-overlay` canvas that animates patterns |
+| `src/pattern-art.js` | Shared animated highlight drawing (per-pattern bespoke FX + themes); accepts a `fade` multiplier for the intro/steady-state lifecycle |
+| `src/pattern-overlay.js` | Persistent `#lichess-pattern-overlay` canvas that animates patterns; tracks per-pattern first-seen time for the intro/faint lifecycle |
 | `src/packs.js` | Registry of selectable animations (signature / single / theme) |
 | `src/settings.js` | Default settings + validation (`enabled`, `packId`, `intensity`, `soundOn`, `patternsOn`, …) |
 | `src/runtime.js` | Wires move feed → renderer + pattern overlay; shared by both entries |

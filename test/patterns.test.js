@@ -31,6 +31,11 @@ test('pin: bishop pins a knight to the king', () => {
   assert.ok(has(p, 'pin', 'w'));
 });
 
+test('no pin when the pinned unit is a pawn, not a piece', () => {
+  const p = patterns('8/8/8/5k2/8/3p4/8/1B5K w - - 0 1');
+  assert.ok(!has(p, 'pin'));
+});
+
 test('skewer: bishop skewers queen in front of a rook', () => {
   const p = patterns('k5r1/8/4q3/8/8/8/B7/6K1 w - - 0 1');
   assert.ok(has(p, 'skewer', 'w'));
@@ -105,4 +110,32 @@ test('fork: a piece attacking two enemy pieces of equal-or-greater value', () =>
   assert.ok(f && f.side === 'w');
   assert.equal(f.squares[0], 'd5'); // the forking piece first
   assert.ok(f.squares.length - 1 >= 2); // two+ targets
+});
+
+test('hanging: an attacked, undefended piece is flagged', () => {
+  const h = patterns('6k1/8/2p1p3/3N4/8/8/8/6K1 w - - 0 1').find((x) => x.type === 'hanging');
+  assert.ok(h && h.side === 'w');
+  assert.equal(h.squares[0], 'd5');
+});
+
+test('not hanging: an equal-value attacker meets an adequately defended piece', () => {
+  const p = patterns('6k1/8/8/3N4/1N6/1b6/8/6K1 w - - 0 1');
+  assert.ok(!has(p, 'hanging'));
+});
+
+test('hanging: still flagged when defended if the cheapest attacker is worth less than the piece', () => {
+  // rook on d5 defended by a bishop, but a knight can take it and win the exchange
+  const h = patterns('6k1/8/8/3R4/1n6/1B6/8/6K1 w - - 0 1').find((x) => x.type === 'hanging');
+  assert.ok(h && h.squares[0] === 'd5');
+});
+
+test('hanging: an attacked, undefended pawn is flagged (same threshold as pieces)', () => {
+  const h = patterns('6k1/8/8/8/8/2p5/8/B5K1 w - - 0 1').find((x) => x.type === 'hanging');
+  assert.ok(h && h.side === 'b');
+  assert.equal(h.squares[0], 'c3');
+});
+
+test('not hanging: a pawn defended by another pawn is not flagged', () => {
+  const p = patterns('6k1/8/8/8/3p4/2p5/8/B5K1 w - - 0 1');
+  assert.ok(!has(p, 'hanging'));
 });

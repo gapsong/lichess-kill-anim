@@ -109,10 +109,14 @@ export function createRuntime({
     if (renderer?.activeCount) frameRequest = schedule(frame);
   }
 
+  // Includes activePly so browsing backward through an already-loaded analysis
+  // game (same snapshot.id, same move count, only the active move changes)
+  // still recomputes patterns instead of leaving a resolved hint on screen.
   function patternSig(snapshot) {
     if (!snapshot) return null;
     const moves = snapshot.sanMoves || [];
-    return `${snapshot.id}|${moves.length}|${moves[moves.length - 1] || ''}`;
+    const ply = snapshot.activePly ?? moves.length;
+    return `${snapshot.id}|${ply}|${moves[ply - 1] || ''}`;
   }
 
   function renderPatterns(snapshot, force) {
