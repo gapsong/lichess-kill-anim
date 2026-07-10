@@ -17,3 +17,6 @@ viewing from (bottom), red = the opponent (top).
   protected by a pawn and safe from enemy pawns. A powerful, permanent post.
 - **Freibauer (Passed pawn)** — a pawn with no enemy pawns ahead on its file or
   the adjacent files. A long-term winning asset, especially in the endgame.
+- **Hängt (Hanging piece or pawn)** — a piece or pawn that's attacked and either
+  undefended or only defended by units that lose material in the trade. Shown
+  as a faint, slow-pulsing ring — deliberately the subtlest of all the hints.

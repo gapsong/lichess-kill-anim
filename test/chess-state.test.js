@@ -111,3 +111,18 @@ test('derivePosition stops at the first illegal SAN', () => {
   assert.equal(board[4][4].type, 'p'); // r=4 -> rank4, f=4 -> file e
   assert.equal(board[6][4], null);     // e2 empty
 });
+
+test('derivePosition stops at activePly instead of always playing to the final move', () => {
+  const snapshot = { initialFen: null, sanMoves: ['e4', 'd5', 'exd5'], activePly: 2 };
+  const { board } = derivePosition(snapshot);
+  // only e4+d5 applied: the black pawn sits on d5, not yet captured by exd5
+  const d5 = board[3][3]; // r=3 -> rank5, f=3 -> file d
+  assert.equal(d5.type, 'p');
+  assert.equal(d5.color, 'b');
+});
+
+test('derivePosition falls back to the final position when activePly is absent (live play)', () => {
+  const { board } = derivePosition({ initialFen: null, sanMoves: ['e4', 'd5', 'exd5'] });
+  const d5 = board[3][3];
+  assert.equal(d5.color, 'w'); // final position: white pawn has captured on d5
+});

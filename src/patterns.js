@@ -220,7 +220,8 @@ function detectPinsAndSkewers(at) {
         const f2 = toSquare(second.file, second.rank);
         const v1 = VALUE[first.piece.type];
         const v2 = VALUE[second.piece.type];
-        if (v2 > v1) {
+        // A pinned pawn is too common/noisy to call out; only strong units (n/b/r/q) count as pinned.
+        if (v2 > v1 && first.piece.type !== 'p') {
           out.push({ type: 'pin', side: s.color, squares: [ssq, f1, f2], line: { from: ssq, to: f2 }, label: 'Pin' });
         } else if (v1 > v2) {
           out.push({ type: 'skewer', side: s.color, squares: [ssq, f1, f2], line: { from: ssq, to: f2 }, label: 'Spieß' });
@@ -347,6 +348,49 @@ function detectForks(at) {
   return out;
 }
 
+// Squares of `color` that attack (f,r) — used both to find attackers of an
+// enemy piece and defenders of a friendly one.
+function attackersOf(at, f, r, color) {
+  const out = [];
+  for (let af = 0; af < 8; af++) {
+    for (let ar = 1; ar <= 8; ar++) {
+      const p = pieceAt(at, af, ar);
+      if (!p || p.color !== color) continue;
+      for (const [tf, tr] of attackSquares(at, af, ar)) {
+        if (tf === f && tr === r) { out.push(p); break; }
+      }
+    }
+  }
+  return out;
+}
+
+// Any non-king unit (piece or pawn) is hanging if it is attacked and either
+// undefended (free capture) or defended so poorly that the cheapest attacker
+// still wins material after the recapture (one-ply exchange estimate, not a
+// full SEE). Pawns use the exact same threshold: since pawn value (1) is the
+// lowest on the board, a defended pawn can never lose the exchange, so a
+// pawn only trips this when it is genuinely undefended — ordinary tension
+// where either side has a pawn or piece backing it up stays quiet.
+function detectHangingPieces(at) {
+  const out = [];
+  for (let f = 0; f < 8; f++) {
+    for (let r = 1; r <= 8; r++) {
+      const p = pieceAt(at, f, r);
+      if (!p || p.type === 'k') continue;
+      const enemy = p.color === 'w' ? 'b' : 'w';
+      const attackers = attackersOf(at, f, r, enemy);
+      if (attackers.length === 0) continue;
+      const defenders = attackersOf(at, f, r, p.color);
+      const cheapestAttacker = Math.min(...attackers.map((a) => VALUE[a.type]));
+      const hanging = defenders.length === 0 || cheapestAttacker < VALUE[p.type];
+      if (hanging) {
+        out.push({ type: 'hanging', side: p.color, squares: [toSquare(f, r)], line: null, label: 'Hängt' });
+      }
+    }
+  }
+  return out;
+}
+
 export function detectPatterns(board) {
   const at = indexBoard(board);
   return [
@@ -360,6 +404,7 @@ export function detectPatterns(board) {
     ...detectHotspots(at),
     ...detectOpenFileRooks(at),
     ...detectKingFortress(at),
-    ...detectForks(at)
+    ...detectForks(at),
+    ...detectHangingPieces(at)
   ];
 }
