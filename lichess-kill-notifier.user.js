@@ -3631,11 +3631,10 @@
       const activePly = snapshot.activePly ?? null;
       if (!this.primed) {
         this.primed = true;
-        const baselineLimit = activePly ?? Infinity;
-        for (const event of allEvents) {
-          if (event.ply <= baselineLimit) this.seen.add(eventKey(event));
-        }
         this.lastActivePly = activePly;
+        if (activePly == null) {
+          for (const event of allEvents) this.seen.add(eventKey(event));
+        }
         return [];
       }
       if (activePly != null) {
