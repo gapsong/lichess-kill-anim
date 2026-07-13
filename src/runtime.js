@@ -119,6 +119,10 @@ export function createRuntime({
     return `${snapshot.id}|${ply}|${moves[ply - 1] || ''}`;
   }
 
+  // TODO(before release): gate pattern hints to NON-ranked pages only. Tactical hints count
+  // as "outside assistance" under chess.com/Lichess fair-play rules and must be OFF in
+  // ranked/live games (allowed on analysis boards, puzzles, review). Kept ON now for the dev
+  // phase — deliberate temporary state. See the fair-play note at the top of AGENTS.md.
   function renderPatterns(snapshot, force) {
     if (!settings.patternsOn) {
       patternOverlay.clear();

@@ -1,5 +1,18 @@
 # Lichess Kill Animations
 
+> ⚠️ **BEFORE PUBLIC RELEASE — fair-play gate (TODO, NOT yet implemented).**
+> The tactical **pattern hints** (pins, forks, hanging pieces, hotspots, "material under
+> pressure", batteries, etc.) count as **outside assistance** during live play. chess.com's
+> Fair Play policy (strictly enforced) and Lichess's fair-play rules both prohibit that in
+> **ranked / rated live games**. The **kill animations are cosmetic and always fine.**
+>
+> **Plan (do before shipping publicly / to chess.com):** gate the pattern hints so they run
+> only on **analysis boards, puzzles and game review**, and are **OFF in ranked/live games**.
+> Add a visible user note that the hints are a study aid, off during ranked play.
+>
+> **For now (dev phase): intentionally kept ON everywhere** — a known, deliberate temporary
+> state. Remove it before release. Wiring point + TODO: `src/runtime.js` (`renderPatterns`).
+
 ## Projektzweck
 
 Dieses Repo enthaelt ein Lichess-Userscript, das Capture-Zuege mit Kill-Animationen visualisiert. Das aktuelle Installationsziel ist Tampermonkey auf `https://lichess.org/*`.
