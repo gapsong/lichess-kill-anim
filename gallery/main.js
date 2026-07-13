@@ -1,7 +1,6 @@
 import { PACKS } from '../src/packs.js';
 import { startPreview } from './preview.js';
 import { startPatternPreview, PATTERN_THEMES } from './pattern-preview.js';
-import { pingExtension, applyPack } from './extension-bridge.js';
 
 const PREVIEW_PX = 200;
 const STORE_URL = 'https://chrome.google.com/webstore/'; // konkrete Listing-URL nach Publish eintragen
@@ -74,22 +73,7 @@ function makeCard(pack, grid) {
   const name = document.createElement('span');
   name.className = 'name';
   name.textContent = pack.label;
-  const btn = document.createElement('button');
-  btn.textContent = 'Use';
-  btn.disabled = !installed;
-  btn.addEventListener('click', async () => {
-    const ok = await applyPack(pack.id);
-    if (ok) {
-      document.querySelectorAll('.card.active').forEach((c) => c.classList.remove('active'));
-      buttons.forEach((b) => { if (!b.disabled) b.textContent = 'Use'; });
-      card.classList.add('active');
-      btn.textContent = 'Active';
-    } else {
-      showTransientError("Couldn't apply — is the extension still enabled?");
-    }
-  });
-  buttons.push(btn);
-  meta.append(name, btn);
+  meta.append(name);
   card.appendChild(meta);
 
   grid.appendChild(card);
@@ -115,19 +99,9 @@ function renderPackGroups(panel) {
   }
 }
 
-function renderStatus(isInstalled) {
-  installed = isInstalled;
-  if (isInstalled) {
-    status.className = 'status ok';
-    status.innerHTML = '<span class="dot"></span>Connected';
-  } else {
-    status.className = 'status';
-    status.innerHTML = `<span class="dot"></span>Not installed — <a href="${STORE_URL}" target="_blank" rel="noopener">Add to Chrome</a>`;
-  }
-  buttons.forEach((b) => {
-    b.disabled = !isInstalled;
-    if (!isInstalled) b.textContent = 'Use';
-  });
+function renderStatus() {
+  // Tampermonkey userscript: nothing to detect live — the install section is the entry point.
+  if (status) status.style.display = 'none';
 }
 
 function showTransientError(message) {
@@ -144,7 +118,7 @@ function renderPatternSection(panel) {
   heading.textContent = 'Pattern hints';
   const desc = document.createElement('p');
   desc.className = 'section-desc';
-  desc.textContent = 'On the board, the extension highlights tactical and positional formations. Green = your side, red = the opponent. Pick a theme to restyle the effects.';
+  desc.textContent = 'On the board, the script highlights tactical and positional formations. Green = your side, red = the opponent. These previews show the themes.';
 
   const themesRow = document.createElement('div');
   Object.assign(themesRow.style, { display: 'flex', gap: '8px', flexWrap: 'wrap', margin: '2px 2px 18px' });
@@ -214,8 +188,7 @@ function renderPatternSection(panel) {
 async function init() {
   renderPackGroups(content);
   renderPatternSection(content);
-  renderStatus(false);
-  renderStatus(await pingExtension());
+  renderStatus();
 }
 
 init();
