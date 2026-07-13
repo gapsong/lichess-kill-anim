@@ -70,7 +70,7 @@ function detectOutposts(at) {
         }
       }
       if (attackable) continue;
-      out.push({ type: 'outpost', side: c, squares: [toSquare(f, r)], line: null, label: 'Außenposten' });
+      out.push({ type: 'outpost', side: c, squares: [toSquare(f, r)], line: null, label: 'Outpost' });
     }
   }
   return out;
@@ -95,7 +95,7 @@ function detectPassedPawns(at) {
           if (af === f && isPawnOf(ahead, c)) blocked = true;
         }
       }
-      if (!blocked) out.push({ type: 'passed-pawn', side: c, squares: [toSquare(f, r)], line: null, label: 'Freibauer' });
+      if (!blocked) out.push({ type: 'passed-pawn', side: c, squares: [toSquare(f, r)], line: null, label: 'Passed pawn' });
     }
   }
   return out;
@@ -169,12 +169,28 @@ function detectBatteries(at) {
         if (q.color !== p.color || !'rbq'.includes(q.type) || !movesAlong(q.type, d)) continue;
         // Reserve doubled rooks for the dedicated 'rooks' pattern; a battery needs a queen.
         if (p.type !== 'q' && q.type !== 'q') continue;
+        // A battery only matters if it BEARS ON THE OPPONENT. From the front piece, in the
+        // aim direction, it must either hit an enemy piece, or project into open space while
+        // aiming toward the enemy — not be blocked by our own piece or point back at our half.
+        const fwd = p.color === 'w' ? 1 : -1;
+        const towardEnemy = d[1] * fwd >= 0;
+        let enemyAhead = false;
+        let openAhead = 0;
+        let sf = hit.file + d[0];
+        let sr = hit.rank + d[1];
+        while (sf >= 0 && sf < 8 && sr >= 1 && sr <= 8) {
+          const occ = pieceAt(at, sf, sr);
+          if (!occ) { openAhead += 1; sf += d[0]; sr += d[1]; continue; }
+          if (occ.color !== p.color) enemyAhead = true; // enemy target in the line of fire
+          break;
+        }
+        if (!enemyAhead && !(openAhead >= 2 && towardEnemy)) continue; // aims at nothing useful
         const a = toSquare(f, r);
         const b = toSquare(hit.file, hit.rank);
         const key = [a, b].sort().join('-');
         if (seen.has(key)) continue;
         seen.add(key);
-        out.push({ type: 'battery', side: p.color, squares: [a, b], line: { from: a, to: b }, label: 'Batterie' });
+        out.push({ type: 'battery', side: p.color, squares: [a, b], line: { from: a, to: b }, label: 'Battery' });
       }
     }
   }
@@ -196,7 +212,7 @@ function detectRooks(at) {
         const key = [a, b].sort().join('-');
         if (seen.has(key)) continue;
         seen.add(key);
-        out.push({ type: 'rooks', side: p.color, squares: [a, b], line: { from: a, to: b }, label: 'Türme' });
+        out.push({ type: 'rooks', side: p.color, squares: [a, b], line: { from: a, to: b }, label: 'Rooks' });
       }
     }
   }
@@ -247,7 +263,7 @@ function detectPinsAndSkewers(at) {
         if (v2 > v1 && first.piece.type !== 'p') {
           out.push({ type: 'pin', side: s.color, squares: [ssq, f1, f2], line: { from: ssq, to: f2 }, label: 'Pin' });
         } else if (v1 > v2 && skewerWinsBack(at, first, second, s.color)) {
-          out.push({ type: 'skewer', side: s.color, squares: [ssq, f1, f2], line: { from: ssq, to: f2 }, label: 'Spieß' });
+          out.push({ type: 'skewer', side: s.color, squares: [ssq, f1, f2], line: { from: ssq, to: f2 }, label: 'Skewer' });
         }
       }
     }
@@ -276,7 +292,7 @@ function detectPawnChains(at) {
             nr += fwd;
           }
           if (squares.length >= 3) {
-            out.push({ type: 'pawn-chain', side: c, squares, line: null, label: 'Bauernkette' });
+            out.push({ type: 'pawn-chain', side: c, squares, line: null, label: 'Pawn chain' });
           }
         }
       }
@@ -334,7 +350,7 @@ function detectHotspots(at) {
         side: enemyColor,
         squares: [toSquare(f, r), ...attackers.map((a) => a.square)],
         line: null,
-        label: 'Brennpunkt'
+        label: 'Hotspot'
       });
     }
   }
@@ -354,7 +370,7 @@ function detectOpenFileRooks(at) {
       const p = pieceAt(at, f, r);
       if (p && p.type === 'r') {
         const endR = p.color === 'w' ? 8 : 1;
-        out.push({ type: 'open-file', side: p.color, squares: [toSquare(f, r)], line: { from: toSquare(f, r), to: toSquare(f, endR) }, label: 'Offene Linie' });
+        out.push({ type: 'open-file', side: p.color, squares: [toSquare(f, r)], line: { from: toSquare(f, r), to: toSquare(f, endR) }, label: 'Open file' });
       }
     }
   }
@@ -374,7 +390,7 @@ function detectKingFortress(at) {
     const k = pieceAtSquare(at, fort.king);
     if (!k || k.type !== 'k' || k.color !== fort.color) continue;
     if (!fort.pawns.every((sq) => isPawnOf(pieceAtSquare(at, sq), fort.color))) continue;
-    out.push({ type: 'fortress', side: fort.color, squares: [fort.king, ...fort.pawns], line: null, label: 'Festung' });
+    out.push({ type: 'fortress', side: fort.color, squares: [fort.king, ...fort.pawns], line: null, label: 'Fortress' });
   }
   return out;
 }
@@ -393,7 +409,7 @@ function detectForks(at) {
         if (q && q.color === enemy && VALUE[q.type] >= myVal) targets.push(toSquare(nf, nr));
       }
       if (targets.length >= 2) {
-        out.push({ type: 'fork', side: p.color, squares: [toSquare(f, r), ...targets], line: null, label: 'Gabel' });
+        out.push({ type: 'fork', side: p.color, squares: [toSquare(f, r), ...targets], line: null, label: 'Fork' });
       }
     }
   }
@@ -438,7 +454,7 @@ function detectHangingPieces(at) {
       const cheapestAttacker = Math.min(...attackers.map((a) => VALUE[a.type]));
       const hanging = defenders.length === 0 || cheapestAttacker < VALUE[p.type];
       if (hanging) {
-        out.push({ type: 'hanging', side: p.color, squares: [toSquare(f, r)], line: null, label: 'Hängt' });
+        out.push({ type: 'hanging', side: p.color, squares: [toSquare(f, r)], line: null, label: 'Hanging' });
       }
     }
   }
