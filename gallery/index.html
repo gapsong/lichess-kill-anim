@@ -123,6 +123,37 @@
     max-width: 1140px; margin: 24px auto 0; padding: 24px 32px 52px;
     color: var(--muted); font-size: 12.5px; border-top: 1px solid var(--line);
   }
+
+  /* ---- install block ---- */
+  .install { max-width: 1140px; margin: 0 auto; padding: 34px 32px 4px; }
+  .install > h2 { margin: 0; font-size: 22px; font-weight: 600; letter-spacing: -0.01em; }
+  .install > p { margin: 8px 0 22px; max-width: 60ch; color: var(--muted); font-size: 14.5px; line-height: 1.55; }
+  .steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+  .step { display: grid; grid-template-columns: auto 1fr; gap: 15px; align-items: start;
+          background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; min-width: 0; }
+  .step-n { width: 30px; height: 30px; border-radius: 8px; background: var(--bg); border: 1px solid var(--line);
+            color: var(--accent); font-weight: 600; font-size: 14px; display: grid; place-items: center; flex: none; }
+  .step h3 { margin: 1px 0 5px; font-size: 15.5px; font-weight: 600; letter-spacing: -0.01em; }
+  .step p { margin: 0 0 13px; color: var(--muted); font-size: 13.5px; line-height: 1.5; }
+  .step p:last-child { margin-bottom: 0; }
+  .ibtn { display: inline-flex; align-items: center; gap: 6px; font-family: inherit; font-size: 13.5px; font-weight: 500;
+          padding: 9px 15px; border-radius: 9px; text-decoration: none; cursor: pointer; border: 1px solid transparent;
+          transition: background .18s, border-color .18s, color .18s; }
+  .ibtn.primary { background: var(--accent); color: #f8f4ea; border-color: var(--accent); }
+  .ibtn.primary:hover { background: var(--accent-soft); }
+  .ibtn.ghost { background: transparent; color: var(--txt); border-color: var(--line); }
+  .ibtn.ghost:hover { border-color: var(--accent-soft); color: var(--accent); }
+  .ibtn:focus-visible { outline: 2px solid var(--accent-soft); outline-offset: 2px; }
+  .urlhint { display: flex; align-items: center; gap: 8px; margin-top: 11px; min-width: 0; }
+  .urlhint code { flex: 1 1 auto; min-width: 0; font-size: 11px; color: var(--muted); background: var(--bg);
+                  border: 1px solid var(--line); border-radius: 6px; padding: 5px 9px;
+                  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .urlhint .copy { flex: none; font-family: inherit; font-size: 11px; color: var(--accent); background: none;
+                   border: 1px solid var(--line); border-radius: 6px; padding: 5px 10px; cursor: pointer; }
+  .urlhint .copy:hover { border-color: var(--accent-soft); }
+  .install-note { margin: 16px 0 0; color: var(--muted); font-size: 12.5px; line-height: 1.5; }
+  .install-note b { color: var(--txt); font-weight: 600; }
+  @media (max-width: 860px) { .steps { grid-template-columns: 1fr; } }
 </style>
 </head>
 <body>
@@ -139,6 +170,41 @@
     </div>
   </header>
 
+  <section class="install">
+    <h2>Add it to your board in a minute</h2>
+    <p>A small userscript that draws capture animations and live tactical hints, right on lichess.org.</p>
+    <ol class="steps">
+      <li class="step">
+        <span class="step-n">1</span>
+        <div>
+          <h3>Install Tampermonkey</h3>
+          <p>The free browser extension that runs userscripts.</p>
+          <a class="ibtn ghost" href="https://www.tampermonkey.net/" target="_blank" rel="noopener">Get Tampermonkey →</a>
+        </div>
+      </li>
+      <li class="step">
+        <span class="step-n">2</span>
+        <div>
+          <h3>Install the script</h3>
+          <p>One click — Tampermonkey shows its install page.</p>
+          <a class="ibtn primary" href="https://gist.githubusercontent.com/gapsong/8b78fdf058b436e5b439b86ef2a816b4/raw/lichess-kill-notifier.user.js">Install the script</a>
+          <div class="urlhint">
+            <code>gist.githubusercontent.com/…/lichess-kill-notifier.user.js</code>
+            <button class="copy" type="button" data-url="https://gist.githubusercontent.com/gapsong/8b78fdf058b436e5b439b86ef2a816b4/raw/lichess-kill-notifier.user.js">Copy</button>
+          </div>
+        </div>
+      </li>
+      <li class="step">
+        <span class="step-n">3</span>
+        <div>
+          <h3>Open Lichess &amp; play</h3>
+          <p>Captures animate and tactical hints appear. Pick a style below.</p>
+        </div>
+      </li>
+    </ol>
+    <p class="install-note"><b>Auto-updates</b> via Tampermonkey · works in live games, analysis, TV &amp; puzzles · only draws on top of the page, nothing else.</p>
+  </section>
+
   <section class="hero">
     <h2>Pick your capture style.</h2>
     <p>Every preview is a real capture, rendered live by the same engine that runs on your board. Click one — it applies instantly.</p>
@@ -152,5 +218,13 @@
   </footer>
 
   <script src="gallery.js"></script>
+  <script>
+    document.querySelectorAll('.urlhint .copy').forEach(function (b) {
+      b.addEventListener('click', function () {
+        if (navigator.clipboard) navigator.clipboard.writeText(b.dataset.url);
+        var t = b.textContent; b.textContent = 'Copied'; setTimeout(function () { b.textContent = t; }, 1200);
+      });
+    });
+  </script>
 </body>
 </html>
