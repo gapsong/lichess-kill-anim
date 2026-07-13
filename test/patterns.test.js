@@ -41,6 +41,34 @@ test('skewer: bishop skewers queen in front of a rook', () => {
   assert.ok(has(p, 'skewer', 'w'));
 });
 
+// Skewer is only surfaced when winning the piece BEHIND actually pays off:
+// the back piece must be at least a minor AND the exchange on its square
+// (after the front piece steps off the ray) must favor the attacker.
+test('skewer: winning an undefended rook behind fires (back >= 3, SEE > 0)', () => {
+  // Ra4 sees queen d4 in front of undefended rook h4 along rank 4.
+  const p = patterns('4k3/8/8/8/R2q3r/8/8/4K3 w - - 0 1');
+  assert.ok(has(p, 'skewer', 'w'));
+});
+
+test('skewer over a defended PAWN does NOT fire (back < 3)', () => {
+  // Ra4 sees queen d4 in front of pawn h4, defended by g5 pawn — back is a pawn.
+  const p = patterns('4k3/8/8/6p1/R2q3p/8/8/4K3 w - - 0 1');
+  assert.ok(!has(p, 'skewer'));
+});
+
+test('skewer where the back piece is only a PAWN does NOT fire (back < 3)', () => {
+  // Ra4 sees queen d4 in front of an undefended pawn h4.
+  const p = patterns('4k3/8/8/8/R2q3p/8/8/4K3 w - - 0 1');
+  assert.ok(!has(p, 'skewer'));
+});
+
+test('skewer over a DEFENDED piece where recapture loses does NOT fire (SEE <= 0)', () => {
+  // Ra4 sees queen d4 in front of knight h4, defended by black pawn g5: rook
+  // takes knight (3), pawn recaptures rook (5) -> attacker nets -2 -> no win.
+  const p = patterns('4k3/8/8/6p1/R2q3n/8/8/4K3 w - - 0 1');
+  assert.ok(!has(p, 'skewer'));
+});
+
 test('every detected pattern has the required shape', () => {
   const p = patterns('6k1/8/8/8/8/3R4/8/3Q2K1 w - - 0 1');
   for (const pat of p) {
