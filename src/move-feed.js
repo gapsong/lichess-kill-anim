@@ -27,6 +27,12 @@ export function readSnapshot(document, location = globalThis.location) {
   };
 }
 
+// Matches a normalized SAN move: castling, a piece move (with optional
+// disambiguation/capture), or a pawn push/capture (with optional promotion),
+// plus an optional check/mate suffix. Deliberately tight so non-move UI
+// (clocks "2:04", evals "+1.5" / "#3", ratings "1500", player names) is excluded.
+const SAN_RE = /^(?:O-O-O|O-O|0-0-0|0-0|[KQRBN][a-h]?[1-8]?x?[a-h][1-8]|[a-h](?:x[a-h])?[1-8](?:=[QRBN])?)[+#]?$/;
+
 export function readSanMoves(document) {
   for (const selector of MOVE_SELECTORS) {
     const moves = [...document.querySelectorAll(selector)]
@@ -36,7 +42,40 @@ export function readSanMoves(document) {
     if (moves.length) return moves;
   }
 
-  return [];
+  // Structural fallback: Lichess TV move-list tags are obfuscated and rotate on
+  // every deploy, so no fixed selector survives. Instead, find leaf elements
+  // whose text is a valid SAN move, group them by parent container, and return
+  // the moves of the container holding the most — keying on SAN content +
+  // structure rather than tag names.
+  return readSanMovesStructural(document);
+}
+
+function readSanMovesStructural(document) {
+  const groups = new Map();
+
+  for (const element of document.querySelectorAll('*')) {
+    if (element.childElementCount > 0) continue; // leaf nodes only
+    const san = normalizeSan(element.textContent);
+    if (!san || !SAN_RE.test(san)) continue;
+
+    const parent = element.parentElement;
+    if (!parent) continue;
+
+    let list = groups.get(parent);
+    if (!list) {
+      list = [];
+      groups.set(parent, list);
+    }
+    list.push(san);
+  }
+
+  // Pick the container with the longest ordered run of SAN children. Map
+  // iteration is DOM order, so a strict `>` keeps the earliest on ties.
+  let best = [];
+  for (const list of groups.values()) {
+    if (list.length > best.length) best = list;
+  }
+  return best;
 }
 
 function readInitialFen(document) {
