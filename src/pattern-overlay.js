@@ -8,14 +8,14 @@ export function patternColor(side, isBlackOrientation) {
   return side === bottomSide ? GREEN : RED;
 }
 
-// EVERY pattern hint plays one strong intro pulse the moment it first appears
-// (INTRO_MS), then settles to a faint, low-opacity resting state for as long as it
-// stays on the board — a universal "pop, then fade to a calm ambient hint"
-// lifecycle. PatternOverlay tracks each pattern's first-seen time (firstSeen) and
+// EVERY pattern hint blinks ONCE the moment it first appears — full strength for a
+// beat, then it eases out to fully OFF (opacity 0) and stays off for as long as the
+// pattern remains on the board. A pattern that resolves and later reappears gets a
+// fresh blink. PatternOverlay tracks each pattern's first-seen time (firstSeen) and
 // applies the resulting opacity uniformly at render time (see _frame / scaleAlpha),
 // so no individual draw routine needs to know about the lifecycle.
-const INTRO_MS = 900;
-const STEADY_FADE = 0.16;
+const HOLD_MS = 900;   // full strength for this long, then
+const BLINK_MS = 1200; // eased down to 0 by here — after this the hint is fully off.
 
 function patternKey(pattern) {
   return `${pattern.type}|${pattern.side}|${pattern.squares.join(',')}`;
@@ -124,12 +124,15 @@ export class PatternOverlay {
     if (state?.context) state.context.clearRect(0, 0, state.size, state.size);
   }
 
-  // 1 during a pattern's one-time intro pulse, STEADY_FADE once it has settled.
+  // One blink: full through HOLD_MS, eased to 0 by BLINK_MS, then off (0).
   // Applies to every pattern type — the universal pop-then-faint lifecycle.
   fadeFor(pattern, atMs) {
     const firstSeenAt = this.firstSeen.get(patternKey(pattern));
     if (firstSeenAt == null) return 1;
-    return (atMs - firstSeenAt) < INTRO_MS ? 1 : STEADY_FADE;
+    const t = atMs - firstSeenAt;
+    if (t >= BLINK_MS) return 0;   // one blink, then fully off
+    if (t <= HOLD_MS) return 1;    // full strength during the blink
+    return 1 - (t - HOLD_MS) / (BLINK_MS - HOLD_MS); // ease out to 0
   }
 
   _start() {

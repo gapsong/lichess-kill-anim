@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Lichess Kill Notifier
 // @namespace    dismo/lichess-kill
-// @version      4.3.2
+// @version      4.3.3
 // @description  Killing-Animationen bei Schlagzuegen mit eigenem Chess-State statt fragilem Board-DOM.
 // @author       Dismo
 // @match        https://lichess.org/*
@@ -5718,8 +5718,8 @@
   }
 
   // src/pattern-overlay.js
-  var INTRO_MS = 900;
-  var STEADY_FADE = 0.16;
+  var HOLD_MS = 900;
+  var BLINK_MS = 1200;
   function patternKey(pattern) {
     return `${pattern.type}|${pattern.side}|${pattern.squares.join(",")}`;
   }
@@ -5815,12 +5815,15 @@
       const state = this.sync();
       if (state?.context) state.context.clearRect(0, 0, state.size, state.size);
     }
-    // 1 during a pattern's one-time intro pulse, STEADY_FADE once it has settled.
+    // One blink: full through HOLD_MS, eased to 0 by BLINK_MS, then off (0).
     // Applies to every pattern type — the universal pop-then-faint lifecycle.
     fadeFor(pattern, atMs) {
       const firstSeenAt = this.firstSeen.get(patternKey(pattern));
       if (firstSeenAt == null) return 1;
-      return atMs - firstSeenAt < INTRO_MS ? 1 : STEADY_FADE;
+      const t = atMs - firstSeenAt;
+      if (t >= BLINK_MS) return 0;
+      if (t <= HOLD_MS) return 1;
+      return 1 - (t - HOLD_MS) / (BLINK_MS - HOLD_MS);
     }
     _start() {
       if (this.raf != null) return;
