@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Lichess Kill Notifier
 // @namespace    dismo/lichess-kill
-// @version      4.3.3
+// @version      4.3.4
 // @description  Killing-Animationen bei Schlagzuegen mit eigenem Chess-State statt fragilem Board-DOM.
 // @author       Dismo
 // @match        https://lichess.org/*
@@ -5807,7 +5807,11 @@
         this.clear();
         return;
       }
-      this._start();
+      if (this.patterns.some((p) => this.fadeFor(p, now) > 0)) {
+        this._start();
+      } else if (this.raf == null) {
+        this._frame(now);
+      }
     }
     clear() {
       this._stop();
@@ -5849,13 +5853,17 @@
       if (!state || !state.context) return;
       const { context, size, isBlackOrientation } = state;
       context.clearRect(0, 0, size, size);
+      let anyVisible = false;
       for (const pattern of this.patterns) {
         const fade = this.fadeFor(pattern, now);
+        if (fade <= 0) continue;
+        anyVisible = true;
         context.globalAlpha = fade;
         const ctx = fade < 1 ? scaleAlpha(context, fade) : context;
         drawPatternFx(ctx, size, pattern, now, this.theme, isBlackOrientation);
       }
       context.globalAlpha = 1;
+      if (!anyVisible) this._stop();
     }
   };
 
