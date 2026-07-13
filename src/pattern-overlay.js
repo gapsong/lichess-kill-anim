@@ -12,7 +12,7 @@ export function patternColor(side, isBlackOrientation) {
 // one strong intro pulse the moment they first appear, then settle to a faint,
 // low-opacity resting state for as long as the pattern stays on the board. Every
 // other pattern keeps looping at full strength (unchanged).
-const FADE_LIFECYCLE_TYPES = new Set(['battery', 'rooks', 'outpost']);
+const FADE_LIFECYCLE_TYPES = new Set(['battery', 'rooks', 'outpost', 'hotspot']);
 const INTRO_MS = 900;
 const STEADY_FADE = 0.16;
 
