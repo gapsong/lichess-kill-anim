@@ -4837,27 +4837,24 @@
     }
     return out;
   }
-  var HOTSPOT_MIN = 4;
+  var HOTSPOT_FIRES = (attackers, defenders) => attackers >= 2 && attackers >= defenders;
   function detectHotspots(at) {
     const out = [];
-    const map = {};
     for (let f = 0; f < 8; f++) {
       for (let r = 1; r <= 8; r++) {
         const p = pieceAt(at, f, r);
         if (!p) continue;
-        for (const [nf, nr] of attackSquares(at, f, r)) {
-          const k = `${nf},${nr}`;
-          (map[k] || (map[k] = { w: [], b: [] }))[p.color].push(toSquare(f, r));
-        }
-      }
-    }
-    for (const k of Object.keys(map)) {
-      for (const color of ["w", "b"]) {
-        const attackers = map[k][color];
-        if (attackers.length >= HOTSPOT_MIN) {
-          const [tf, tr] = k.split(",").map(Number);
-          out.push({ type: "hotspot", side: color, squares: [toSquare(tf, tr), ...attackers], line: null, label: "Brennpunkt" });
-        }
+        const enemyColor = p.color === "w" ? "b" : "w";
+        const attackers = attackersOf(at, f, r, enemyColor);
+        const defenders = attackersOf(at, f, r, p.color);
+        if (!HOTSPOT_FIRES(attackers.length, defenders.length)) continue;
+        out.push({
+          type: "hotspot",
+          side: enemyColor,
+          squares: [toSquare(f, r), ...attackers.map((a) => a.square)],
+          line: null,
+          label: "Brennpunkt"
+        });
       }
     }
     return out;
@@ -4928,7 +4925,7 @@
         if (!p || p.color !== color) continue;
         for (const [tf, tr] of attackSquares(at, af, ar)) {
           if (tf === f && tr === r) {
-            out.push(p);
+            out.push({ type: p.type, color: p.color, square: toSquare(af, ar) });
             break;
           }
         }
@@ -5513,7 +5510,7 @@
     ctx.fill();
     ctx.restore();
   }
-  function drawHotspot(ctx, size, pattern, now, theme, blackO) {
+  function drawHotspot(ctx, size, pattern, now, theme, blackO, fade = 1) {
     const color = colorFor(pattern, theme, blackO);
     const sq = size / 8;
     const focal = center(pattern.squares[0], size, blackO);
@@ -5528,14 +5525,14 @@
       ctx.lineCap = "round";
       ctx.shadowColor = color;
       ctx.shadowBlur = sq * 0.2;
-      ctx.globalAlpha = 0.28;
+      ctx.globalAlpha = 0.28 * fade;
       ctx.lineWidth = Math.max(1, sq * 0.04);
       ctx.beginPath();
       ctx.moveTo(a.x, a.y);
       ctx.lineTo(focal.x, focal.y);
       ctx.stroke();
       const p = (now / 700 + i * 0.18) % 1;
-      ctx.globalAlpha = 0.85;
+      ctx.globalAlpha = 0.85 * fade;
       ctx.fillStyle = theme.spark;
       ctx.beginPath();
       ctx.arc(a.x + (focal.x - a.x) * p, a.y + (focal.y - a.y) * p, sq * 0.05, 0, 6.2832);
@@ -5548,13 +5545,13 @@
     const grd = ctx.createRadialGradient(focal.x, focal.y, 0, focal.x, focal.y, rad);
     grd.addColorStop(0, color);
     grd.addColorStop(1, "transparent");
-    ctx.globalAlpha = 0.55 * breathe;
+    ctx.globalAlpha = 0.55 * breathe * fade;
     ctx.fillStyle = grd;
     ctx.beginPath();
     ctx.arc(focal.x, focal.y, rad, 0, 6.2832);
     ctx.fill();
     ctx.restore();
-    microSparks(ctx, focal.x, focal.y, sq, theme.spark, now, 4 + n, 0.4, heat);
+    microSparks(ctx, focal.x, focal.y, sq, theme.spark, now, 4 + n, 0.4, heat * fade);
   }
   function drawOpenFile(ctx, size, pattern, now, theme, blackO) {
     const color = colorFor(pattern, theme, blackO);
@@ -5658,7 +5655,7 @@
       case "pawn-chain":
         return drawPawnChain(ctx, size, pattern, now, theme, blackO);
       case "hotspot":
-        return drawHotspot(ctx, size, pattern, now, theme, blackO);
+        return drawHotspot(ctx, size, pattern, now, theme, blackO, fade);
       case "open-file":
         return drawOpenFile(ctx, size, pattern, now, theme, blackO);
       case "fortress":
@@ -5673,7 +5670,7 @@
   }
 
   // src/pattern-overlay.js
-  var FADE_LIFECYCLE_TYPES = /* @__PURE__ */ new Set(["battery", "rooks", "outpost"]);
+  var FADE_LIFECYCLE_TYPES = /* @__PURE__ */ new Set(["battery", "rooks", "outpost", "hotspot"]);
   var INTRO_MS = 900;
   var STEADY_FADE = 0.16;
   function patternKey(pattern) {

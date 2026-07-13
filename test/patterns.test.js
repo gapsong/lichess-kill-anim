@@ -97,6 +97,26 @@ test('hotspot: a square attacked by four or more pieces', () => {
   assert.ok(h.squares.length - 1 >= 4); // four+ attackers
 });
 
+test('hotspot: an occupied piece with attackers >= defenders and >= 2 attackers fires', () => {
+  // black knight on d5 attacked by two white pawns (c4, e4), no defenders
+  const h = patterns('6k1/8/8/3n4/2P1P3/8/8/6K1 w - - 0 1').find((x) => x.type === 'hotspot');
+  assert.ok(h && h.side === 'w'); // side = the attacking colour
+  assert.equal(h.squares[0], 'd5'); // pressured piece first
+  assert.equal(h.squares.length - 1, 2); // its two attacker squares
+});
+
+test('hotspot: an empty square attacked by many pieces does NOT fire', () => {
+  // e5 is empty; c4/g4 knights and b2/h2 bishops all bear on it, but there is
+  // no piece there to gang up on.
+  assert.ok(!has(patterns('6k1/8/8/8/2N3N1/8/1B5B/6K1 w - - 0 1'), 'hotspot'));
+});
+
+test('hotspot: a well-defended piece (defenders > attackers) does NOT fire', () => {
+  // black knight on d5: 2 white attackers (c4, e4 pawns), 3 black defenders
+  // (c6, e6 pawns and the d8 rook).
+  assert.ok(!has(patterns('3r2k1/8/2p1p3/3n4/2P1P3/8/8/6K1 w - - 0 1'), 'hotspot'));
+});
+
 test('open file: a rook on a pawn-free file', () => {
   assert.ok(has(patterns('6k1/8/8/8/8/8/8/4R1K1 w - - 0 1'), 'open-file', 'w'));
 });
