@@ -527,7 +527,7 @@ function drawPawnChain(ctx, size, pattern, now, theme, blackO) {
 }
 
 /* ---------- 🎯 Hotspot ---------- */
-function drawHotspot(ctx, size, pattern, now, theme, blackO) {
+function drawHotspot(ctx, size, pattern, now, theme, blackO, fade = 1) {
   const color = colorFor(pattern, theme, blackO);
   const sq = size / 8;
   const focal = center(pattern.squares[0], size, blackO);
@@ -542,11 +542,11 @@ function drawHotspot(ctx, size, pattern, now, theme, blackO) {
     ctx.lineCap = 'round';
     ctx.shadowColor = color;
     ctx.shadowBlur = sq * 0.2;
-    ctx.globalAlpha = 0.28;
+    ctx.globalAlpha = 0.28 * fade;
     ctx.lineWidth = Math.max(1, sq * 0.04);
     ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(focal.x, focal.y); ctx.stroke();
     const p = ((now / 700) + i * 0.18) % 1;
-    ctx.globalAlpha = 0.85;
+    ctx.globalAlpha = 0.85 * fade;
     ctx.fillStyle = theme.spark;
     ctx.beginPath(); ctx.arc(a.x + (focal.x - a.x) * p, a.y + (focal.y - a.y) * p, sq * 0.05, 0, 6.2832); ctx.fill();
     ctx.restore();
@@ -557,11 +557,11 @@ function drawHotspot(ctx, size, pattern, now, theme, blackO) {
   const grd = ctx.createRadialGradient(focal.x, focal.y, 0, focal.x, focal.y, rad);
   grd.addColorStop(0, color);
   grd.addColorStop(1, 'transparent');
-  ctx.globalAlpha = 0.55 * breathe;
+  ctx.globalAlpha = 0.55 * breathe * fade;
   ctx.fillStyle = grd;
   ctx.beginPath(); ctx.arc(focal.x, focal.y, rad, 0, 6.2832); ctx.fill();
   ctx.restore();
-  microSparks(ctx, focal.x, focal.y, sq, theme.spark, now, 4 + n, 0.4, heat);
+  microSparks(ctx, focal.x, focal.y, sq, theme.spark, now, 4 + n, 0.4, heat * fade);
 }
 
 /* ---------- 🏹 Open file ---------- */
@@ -660,7 +660,7 @@ export function drawPatternFx(ctx, size, pattern, now, theme = PATTERN_THEMES[0]
     case 'outpost': return drawOutpost(ctx, size, pattern, now, theme, blackO, fade);
     case 'passed-pawn': return drawPassedPawn(ctx, size, pattern, now, theme, blackO);
     case 'pawn-chain': return drawPawnChain(ctx, size, pattern, now, theme, blackO);
-    case 'hotspot': return drawHotspot(ctx, size, pattern, now, theme, blackO);
+    case 'hotspot': return drawHotspot(ctx, size, pattern, now, theme, blackO, fade);
     case 'open-file': return drawOpenFile(ctx, size, pattern, now, theme, blackO);
     case 'fortress': return drawFortress(ctx, size, pattern, now, theme, blackO);
     case 'fork': return drawFork(ctx, size, pattern, now, theme, blackO);

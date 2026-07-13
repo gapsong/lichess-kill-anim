@@ -262,28 +262,31 @@ function detectPawnChains(at) {
   return out;
 }
 
-const HOTSPOT_MIN = 4;
+// A hotspot is a real piece under a genuine pile-up: it fires only for an
+// occupied square where the enemy has ganged up at least as hard as the
+// defence. Tune the firing rule in this ONE place — bump `>= 2` to `>= 3` to
+// demand more attackers, or change the second `>=` to `>` to require the
+// attackers to strictly outnumber the defenders. A lone attacker (< 2) is left
+// to the "hanging piece" hint, so the hotspot always means a true pile-up.
+const HOTSPOT_FIRES = (attackers, defenders) => attackers >= 2 && attackers >= defenders;
 
 function detectHotspots(at) {
   const out = [];
-  const map = {};
   for (let f = 0; f < 8; f++) {
     for (let r = 1; r <= 8; r++) {
       const p = pieceAt(at, f, r);
       if (!p) continue;
-      for (const [nf, nr] of attackSquares(at, f, r)) {
-        const k = `${nf},${nr}`;
-        (map[k] || (map[k] = { w: [], b: [] }))[p.color].push(toSquare(f, r));
-      }
-    }
-  }
-  for (const k of Object.keys(map)) {
-    for (const color of ['w', 'b']) {
-      const attackers = map[k][color];
-      if (attackers.length >= HOTSPOT_MIN) {
-        const [tf, tr] = k.split(',').map(Number);
-        out.push({ type: 'hotspot', side: color, squares: [toSquare(tf, tr), ...attackers], line: null, label: 'Brennpunkt' });
-      }
+      const enemyColor = p.color === 'w' ? 'b' : 'w';
+      const attackers = attackersOf(at, f, r, enemyColor);
+      const defenders = attackersOf(at, f, r, p.color);
+      if (!HOTSPOT_FIRES(attackers.length, defenders.length)) continue;
+      out.push({
+        type: 'hotspot',
+        side: enemyColor,
+        squares: [toSquare(f, r), ...attackers.map((a) => a.square)],
+        line: null,
+        label: 'Brennpunkt'
+      });
     }
   }
   return out;
@@ -348,8 +351,10 @@ function detectForks(at) {
   return out;
 }
 
-// Squares of `color` that attack (f,r) — used both to find attackers of an
-// enemy piece and defenders of a friendly one.
+// Pieces of `color` that attack (f,r) — used both to find attackers of an
+// enemy piece and defenders of a friendly one. Each returned piece carries the
+// `square` it attacks from, so callers that need the geometry (hotspot lines)
+// don't have to re-scan.
 function attackersOf(at, f, r, color) {
   const out = [];
   for (let af = 0; af < 8; af++) {
@@ -357,7 +362,7 @@ function attackersOf(at, f, r, color) {
       const p = pieceAt(at, af, ar);
       if (!p || p.color !== color) continue;
       for (const [tf, tr] of attackSquares(at, af, ar)) {
-        if (tf === f && tr === r) { out.push(p); break; }
+        if (tf === f && tr === r) { out.push({ type: p.type, color: p.color, square: toSquare(af, ar) }); break; }
       }
     }
   }
