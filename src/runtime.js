@@ -9,7 +9,7 @@ import { derivePosition } from './chess-state.js';
 import { detectPatterns } from './patterns.js';
 import { PatternOverlay } from './pattern-overlay.js';
 
-const PIECE_NAMES = { p: 'Bauer', n: 'Springer', b: 'Läufer', r: 'Turm', q: 'Dame', k: 'König' };
+const PIECE_NAMES = { p: 'Pawn', n: 'Knight', b: 'Bishop', r: 'Rook', q: 'Queen', k: 'King' };
 
 function domToast(doc, text) {
   if (!doc) return;
@@ -90,7 +90,7 @@ export function createRuntime({
       { size: state.size, isBlackOrientation: state.isBlackOrientation },
       snapshotId
     );
-    emit(`${PIECE_NAMES[event.movingPiece] || 'Figur'} schlägt`);
+    emit(`${PIECE_NAMES[event.movingPiece] || 'Piece'} captures`);
     renderer.play(renderEvent);
     startFrameLoop();
   }
