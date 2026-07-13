@@ -262,28 +262,57 @@ function detectPawnChains(at) {
   return out;
 }
 
-const HOTSPOT_MIN = 4;
+// Static Exchange Evaluation on an occupied square. `onSquareValue` is the value
+// of the piece currently sitting there (the one about to be captured);
+// `moverVals`/`otherVals` are the VALUEs of the side-to-move's and the other
+// side's remaining attackers, each sorted ascending so the cheapest unit always
+// captures first. Returns the best net material the side to move can win,
+// standing pat (0) whenever capturing would lose material. A king may only
+// capture when the other side has no piece left to recapture — it must not
+// capture into defence.
+function seeGain(onSquareValue, moverVals, otherVals) {
+  if (moverVals.length === 0) return 0;
+  const cheapest = moverVals[0];
+  if (cheapest === VALUE.k && otherVals.length > 0) return 0;
+  return Math.max(0, onSquareValue - seeGain(cheapest, otherVals, moverVals.slice(1)));
+}
 
+// Net material the attacking side wins by initiating the capture sequence on the
+// occupied square. The first attacker is committed (it is the premise "what if I
+// capture here"); every later ply is optional. < 0 means the attacker loses
+// material, == 0 an even trade — neither is a real threat.
+function staticExchange(victimValue, attackerVals, defenderVals) {
+  if (attackerVals.length === 0) return 0;
+  const cheapest = attackerVals[0];
+  if (cheapest === VALUE.k && defenderVals.length > 0) return 0; // lone king can't win a defended square
+  return victimValue - seeGain(cheapest, defenderVals, attackerVals.slice(1));
+}
+
+// A hotspot marks an occupied square where the attacking side genuinely WINS
+// material by going into the exchange (SEE > 0). This is stricter than a raw
+// attacker/defender count: a queen + bishop battering a defended pawn pile more
+// force on than the defence, but the cheapest attacker (the bishop) is worth more
+// than the pawn, so the exchange nets a loss — SEE <= 0 and the square stays dark.
 function detectHotspots(at) {
   const out = [];
-  const map = {};
   for (let f = 0; f < 8; f++) {
     for (let r = 1; r <= 8; r++) {
       const p = pieceAt(at, f, r);
       if (!p) continue;
-      for (const [nf, nr] of attackSquares(at, f, r)) {
-        const k = `${nf},${nr}`;
-        (map[k] || (map[k] = { w: [], b: [] }))[p.color].push(toSquare(f, r));
-      }
-    }
-  }
-  for (const k of Object.keys(map)) {
-    for (const color of ['w', 'b']) {
-      const attackers = map[k][color];
-      if (attackers.length >= HOTSPOT_MIN) {
-        const [tf, tr] = k.split(',').map(Number);
-        out.push({ type: 'hotspot', side: color, squares: [toSquare(tf, tr), ...attackers], line: null, label: 'Brennpunkt' });
-      }
+      const enemyColor = p.color === 'w' ? 'b' : 'w';
+      const attackers = attackersOf(at, f, r, enemyColor);
+      if (attackers.length === 0) continue;
+      const defenders = attackersOf(at, f, r, p.color);
+      const attackerVals = attackers.map((a) => VALUE[a.type]).sort((a, b) => a - b);
+      const defenderVals = defenders.map((d) => VALUE[d.type]).sort((a, b) => a - b);
+      if (staticExchange(VALUE[p.type], attackerVals, defenderVals) <= 0) continue;
+      out.push({
+        type: 'hotspot',
+        side: enemyColor,
+        squares: [toSquare(f, r), ...attackers.map((a) => a.square)],
+        line: null,
+        label: 'Brennpunkt'
+      });
     }
   }
   return out;
@@ -348,8 +377,10 @@ function detectForks(at) {
   return out;
 }
 
-// Squares of `color` that attack (f,r) — used both to find attackers of an
-// enemy piece and defenders of a friendly one.
+// Pieces of `color` that attack (f,r) — used both to find attackers of an
+// enemy piece and defenders of a friendly one. Each returned piece carries the
+// `square` it attacks from, so callers that need the geometry (hotspot lines)
+// don't have to re-scan.
 function attackersOf(at, f, r, color) {
   const out = [];
   for (let af = 0; af < 8; af++) {
@@ -357,7 +388,7 @@ function attackersOf(at, f, r, color) {
       const p = pieceAt(at, af, ar);
       if (!p || p.color !== color) continue;
       for (const [tf, tr] of attackSquares(at, af, ar)) {
-        if (tf === f && tr === r) { out.push(p); break; }
+        if (tf === f && tr === r) { out.push({ type: p.type, color: p.color, square: toSquare(af, ar) }); break; }
       }
     }
   }

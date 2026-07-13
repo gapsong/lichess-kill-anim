@@ -25,19 +25,23 @@ export class CaptureEventStream {
     const allEvents = deriveEvents(snapshot);
     const activePly = snapshot.activePly ?? null;
 
-    // First scan of a new context: seed every capture already on the board as a
-    // silent baseline so entering a game with prior captures fires nothing. Only
-    // captures that first appear in a later scan emit. On the analysis board only
-    // captures up to the viewed ply are already "on the board", so advancing the
-    // cursor to a further capture still fires; on the live/TV board (activePly
-    // null) every played capture is baselined.
+    // First scan of a new context: silently baseline so entering a game with
+    // prior captures fires nothing — but ONLY on the live/TV board (activePly
+    // null), where animations are arrival-driven and seeding all played captures
+    // is what stops the whole game re-animating on entry. On the analysis board
+    // (activePly != null) animations are NAVIGATION-driven: every click onto a
+    // capture ply must fire, including captures earlier than the entry cursor.
+    // Seeding there (the cursor usually sits at the game's end) would pre-mark
+    // EVERY capture as seen, so navigating onto one would never animate. So don't
+    // seed on the analysis path — leave `seen` empty and let the activePly branch
+    // fire on navigation. The activePly === lastActivePly guard still prevents
+    // re-firing the same ply across repeated scans.
     if (!this.primed) {
       this.primed = true;
-      const baselineLimit = activePly ?? Infinity;
-      for (const event of allEvents) {
-        if (event.ply <= baselineLimit) this.seen.add(eventKey(event));
-      }
       this.lastActivePly = activePly;
+      if (activePly == null) {
+        for (const event of allEvents) this.seen.add(eventKey(event));
+      }
       return [];
     }
 
