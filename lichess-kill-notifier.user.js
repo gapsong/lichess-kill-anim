@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Lichess Kill Notifier
 // @namespace    dismo/lichess-kill
-// @version      4.3.4
+// @version      4.3.5
 // @description  Killing-Animationen bei Schlagzuegen mit eigenem Chess-State statt fragilem Board-DOM.
 // @author       Dismo
 // @match        https://lichess.org/*
@@ -4683,7 +4683,7 @@
           }
         }
         if (attackable) continue;
-        out.push({ type: "outpost", side: c, squares: [toSquare(f, r)], line: null, label: "Au\xDFenposten" });
+        out.push({ type: "outpost", side: c, squares: [toSquare(f, r)], line: null, label: "Outpost" });
       }
     }
     return out;
@@ -4706,7 +4706,7 @@
             if (af === f && isPawnOf(ahead, c)) blocked = true;
           }
         }
-        if (!blocked) out.push({ type: "passed-pawn", side: c, squares: [toSquare(f, r)], line: null, label: "Freibauer" });
+        if (!blocked) out.push({ type: "passed-pawn", side: c, squares: [toSquare(f, r)], line: null, label: "Passed pawn" });
       }
     }
     return out;
@@ -4774,12 +4774,30 @@
           const q = hit.piece;
           if (q.color !== p.color || !"rbq".includes(q.type) || !movesAlong(q.type, d)) continue;
           if (p.type !== "q" && q.type !== "q") continue;
+          const fwd = p.color === "w" ? 1 : -1;
+          const towardEnemy = d[1] * fwd >= 0;
+          let enemyAhead = false;
+          let openAhead = 0;
+          let sf = hit.file + d[0];
+          let sr = hit.rank + d[1];
+          while (sf >= 0 && sf < 8 && sr >= 1 && sr <= 8) {
+            const occ = pieceAt(at, sf, sr);
+            if (!occ) {
+              openAhead += 1;
+              sf += d[0];
+              sr += d[1];
+              continue;
+            }
+            if (occ.color !== p.color) enemyAhead = true;
+            break;
+          }
+          if (!enemyAhead && !(openAhead >= 2 && towardEnemy)) continue;
           const a = toSquare(f, r);
           const b = toSquare(hit.file, hit.rank);
           const key = [a, b].sort().join("-");
           if (seen.has(key)) continue;
           seen.add(key);
-          out.push({ type: "battery", side: p.color, squares: [a, b], line: { from: a, to: b }, label: "Batterie" });
+          out.push({ type: "battery", side: p.color, squares: [a, b], line: { from: a, to: b }, label: "Battery" });
         }
       }
     }
@@ -4800,7 +4818,7 @@
           const key = [a, b].sort().join("-");
           if (seen.has(key)) continue;
           seen.add(key);
-          out.push({ type: "rooks", side: p.color, squares: [a, b], line: { from: a, to: b }, label: "T\xFCrme" });
+          out.push({ type: "rooks", side: p.color, squares: [a, b], line: { from: a, to: b }, label: "Rooks" });
         }
       }
     }
@@ -4839,7 +4857,7 @@
           if (v2 > v1 && first.piece.type !== "p") {
             out.push({ type: "pin", side: s.color, squares: [ssq, f1, f2], line: { from: ssq, to: f2 }, label: "Pin" });
           } else if (v1 > v2 && skewerWinsBack(at, first, second, s.color)) {
-            out.push({ type: "skewer", side: s.color, squares: [ssq, f1, f2], line: { from: ssq, to: f2 }, label: "Spie\xDF" });
+            out.push({ type: "skewer", side: s.color, squares: [ssq, f1, f2], line: { from: ssq, to: f2 }, label: "Skewer" });
           }
         }
       }
@@ -4863,7 +4881,7 @@
               nr += fwd;
             }
             if (squares.length >= 3) {
-              out.push({ type: "pawn-chain", side: c, squares, line: null, label: "Bauernkette" });
+              out.push({ type: "pawn-chain", side: c, squares, line: null, label: "Pawn chain" });
             }
           }
         }
@@ -4901,7 +4919,7 @@
           side: enemyColor,
           squares: [toSquare(f, r), ...attackers.map((a) => a.square)],
           line: null,
-          label: "Brennpunkt"
+          label: "Hotspot"
         });
       }
     }
@@ -4923,7 +4941,7 @@
         const p = pieceAt(at, f, r);
         if (p && p.type === "r") {
           const endR = p.color === "w" ? 8 : 1;
-          out.push({ type: "open-file", side: p.color, squares: [toSquare(f, r)], line: { from: toSquare(f, r), to: toSquare(f, endR) }, label: "Offene Linie" });
+          out.push({ type: "open-file", side: p.color, squares: [toSquare(f, r)], line: { from: toSquare(f, r), to: toSquare(f, endR) }, label: "Open file" });
         }
       }
     }
@@ -4941,7 +4959,7 @@
       const k = pieceAtSquare(at, fort.king);
       if (!k || k.type !== "k" || k.color !== fort.color) continue;
       if (!fort.pawns.every((sq) => isPawnOf(pieceAtSquare(at, sq), fort.color))) continue;
-      out.push({ type: "fortress", side: fort.color, squares: [fort.king, ...fort.pawns], line: null, label: "Festung" });
+      out.push({ type: "fortress", side: fort.color, squares: [fort.king, ...fort.pawns], line: null, label: "Fortress" });
     }
     return out;
   }
@@ -4959,7 +4977,7 @@
           if (q && q.color === enemy && VALUE2[q.type] >= myVal) targets.push(toSquare(nf, nr));
         }
         if (targets.length >= 2) {
-          out.push({ type: "fork", side: p.color, squares: [toSquare(f, r), ...targets], line: null, label: "Gabel" });
+          out.push({ type: "fork", side: p.color, squares: [toSquare(f, r), ...targets], line: null, label: "Fork" });
         }
       }
     }
@@ -4994,7 +5012,7 @@
         const cheapestAttacker = Math.min(...attackers.map((a) => VALUE2[a.type]));
         const hanging = defenders.length === 0 || cheapestAttacker < VALUE2[p.type];
         if (hanging) {
-          out.push({ type: "hanging", side: p.color, squares: [toSquare(f, r)], line: null, label: "H\xE4ngt" });
+          out.push({ type: "hanging", side: p.color, squares: [toSquare(f, r)], line: null, label: "Hanging" });
         }
       }
     }
@@ -5868,7 +5886,7 @@
   };
 
   // src/runtime.js
-  var PIECE_NAMES = { p: "Bauer", n: "Springer", b: "L\xE4ufer", r: "Turm", q: "Dame", k: "K\xF6nig" };
+  var PIECE_NAMES = { p: "Pawn", n: "Knight", b: "Bishop", r: "Rook", q: "Queen", k: "King" };
   function domToast(doc, text) {
     if (!doc) return;
     const old = doc.getElementById("k-toast");
@@ -5952,7 +5970,7 @@
         { size: state.size, isBlackOrientation: state.isBlackOrientation },
         snapshotId
       );
-      emit(`${PIECE_NAMES[event.movingPiece] || "Figur"} schl\xE4gt`);
+      emit(`${PIECE_NAMES[event.movingPiece] || "Piece"} captures`);
       renderer.play(renderEvent);
       startFrameLoop();
     }
