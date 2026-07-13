@@ -33,37 +33,37 @@ function overlayAt(clockRef) {
   return new PatternOverlay({ document: fakeDoc(), now: () => clockRef.t });
 }
 
-test('a "state" hint (outpost) is full strength during its intro, then fades to a low steady opacity', () => {
+test('a hint blinks at full strength, then goes fully off', () => {
   const clock = { t: 1000 };
   const overlay = overlayAt(clock);
   const pattern = outpostPattern();
   overlay.render([pattern]);
   assert.equal(overlay.fadeFor(pattern, 1000), 1); // full strength the instant it appears
-  assert.equal(overlay.fadeFor(pattern, 1000 + 899), 1); // still inside the one intro pulse
-  const steady = overlay.fadeFor(pattern, 1000 + 900);
-  assert.ok(steady > 0 && steady < 0.3); // settled: low, but not fully invisible
+  assert.equal(overlay.fadeFor(pattern, 1000 + 899), 1); // still inside the blink
+  assert.equal(overlay.fadeFor(pattern, 1000 + 1200), 0); // blink over -> off
+  assert.equal(overlay.fadeFor(pattern, 1000 + 3000), 0); // stays off
 });
 
-test('a "connections" hint (battery) follows the same intro-then-faint lifecycle', () => {
+test('every pattern type blinks once then off (e.g. battery)', () => {
   const clock = { t: 0 };
   const overlay = overlayAt(clock);
   const pattern = batteryPattern();
   overlay.render([pattern]);
   assert.equal(overlay.fadeFor(pattern, 0), 1);
-  assert.ok(overlay.fadeFor(pattern, 5000) < 0.3);
+  assert.equal(overlay.fadeFor(pattern, 5000), 0);
 });
 
-test('a persisting fade-lifecycle pattern does not re-trigger its intro on later renders', () => {
+test('a persisting pattern does not re-trigger its blink on later renders', () => {
   const clock = { t: 0 };
   const overlay = overlayAt(clock);
   const pattern = outpostPattern();
   overlay.render([pattern]);
-  clock.t = 5000; // long past the intro window
+  clock.t = 5000; // long past the blink window
   overlay.render([pattern]); // same outpost is still on the board
-  assert.ok(overlay.fadeFor(pattern, 5000) < 0.3); // stays faint, not reset to full strength
+  assert.equal(overlay.fadeFor(pattern, 5000), 0); // stays off, not reset to full strength
 });
 
-test('a fade-lifecycle pattern that resolves and later reappears gets a fresh intro pulse', () => {
+test('a pattern that resolves and later reappears gets a fresh blink', () => {
   const clock = { t: 0 };
   const overlay = overlayAt(clock);
   const pattern = outpostPattern();
@@ -75,25 +75,25 @@ test('a fade-lifecycle pattern that resolves and later reappears gets a fresh in
   assert.equal(overlay.fadeFor(pattern, 6000), 1);
 });
 
-test('the intro-then-faint lifecycle now applies to every pattern type (e.g. fortress)', () => {
+test('the blink-then-off lifecycle applies to every pattern type (e.g. fortress)', () => {
   const clock = { t: 0 };
   const overlay = overlayAt(clock);
   const pattern = fortressPattern();
   overlay.render([pattern]);
   assert.equal(overlay.fadeFor(pattern, 0), 1); // pops at full strength on arrival
-  assert.equal(overlay.fadeFor(pattern, 899), 1); // still inside the one intro pulse
-  assert.ok(overlay.fadeFor(pattern, 10000) < 0.3); // settles to a faint steady state
+  assert.equal(overlay.fadeFor(pattern, 899), 1); // still inside the blink
+  assert.equal(overlay.fadeFor(pattern, 10000), 0); // then fully off
 });
 
-test('a non-connections pattern (e.g. fork) also gets the fresh-intro-on-reappear behaviour', () => {
+test('a non-connections pattern (e.g. fork) also gets a fresh blink on reappear', () => {
   const clock = { t: 0 };
   const overlay = overlayAt(clock);
   const pattern = { type: 'fork', side: 'w', squares: ['e5', 'c7', 'g7'], line: null, label: 'Gabel' };
   overlay.render([pattern]);
-  assert.ok(overlay.fadeFor(pattern, 5000) < 0.3); // settled after its intro
+  assert.equal(overlay.fadeFor(pattern, 5000), 0); // off after its blink
   clock.t = 5000;
   overlay.render([]); // resolves and clears firstSeen
   clock.t = 6000;
-  overlay.render([pattern]); // reappears -> fresh pop
+  overlay.render([pattern]); // reappears -> fresh blink
   assert.equal(overlay.fadeFor(pattern, 6000), 1);
 });
