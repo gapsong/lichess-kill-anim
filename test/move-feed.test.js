@@ -63,6 +63,67 @@ test('preserves repeated SAN moves because repetitions are legal game history', 
   ]);
 });
 
+test('reads SAN moves from obfuscated TV tags via the structural fallback', () => {
+  // TV move-list tags are randomly generated and rotate on every deploy, so no
+  // fixed selector matches. Moves sit in obfuscated leaf tags under one container.
+  const dom = new JSDOM(`
+    <i5d>
+      <app>
+        <index>1</index><z7yx>e4</z7yx><z7yx>Nf6</z7yx>
+        <index>2</index><z7yx>e5</z7yx><z7yx>Nd5</z7yx>
+        <index>3</index><z7yx>Nf3</z7yx><z7yx>d6</z7yx>
+        <index>4</index><z7yx>Nc3</z7yx><z7yx>dxe5</z7yx>
+      </app>
+    </i5d>
+  `);
+
+  assert.deepEqual(readSnapshot(dom.window.document, { pathname: '/tv' }), {
+    id: '/tv|start',
+    initialFen: null,
+    sanMoves: ['e4', 'Nf6', 'e5', 'Nd5', 'Nf3', 'd6', 'Nc3', 'dxe5'],
+    activePly: null
+  });
+});
+
+test('structural fallback ignores clocks, names, ratings and evals', () => {
+  const dom = new JSDOM(`
+    <main>
+      <cg-board></cg-board>
+      <q9k>Magnus</q9k><q9k>2831</q9k><q9k>2:04</q9k>
+      <q9k>Hikaru</q9k><q9k>2790</q9k><q9k>1:58</q9k>
+      <q9k>+1.5</q9k><q9k>#3</q9k><q9k>1-0</q9k>
+    </main>
+  `);
+
+  assert.equal(readSnapshot(dom.window.document, { pathname: '/tv' }), null);
+});
+
+test('structural fallback preserves repeated SAN moves', () => {
+  const dom = new JSDOM(`
+    <app>
+      <z7yx>Nf3</z7yx><z7yx>Nf6</z7yx><z7yx>Ng1</z7yx><z7yx>Ng8</z7yx><z7yx>Nf3</z7yx>
+    </app>
+  `);
+
+  assert.deepEqual(readSnapshot(dom.window.document, { pathname: '/tv' })?.sanMoves, [
+    'Nf3', 'Nf6', 'Ng1', 'Ng8', 'Nf3'
+  ]);
+});
+
+test('known selectors take precedence over the structural fallback', () => {
+  const dom = new JSDOM(`
+    <l4x>
+      <move><san>e4</san></move>
+      <move><san>e5</san></move>
+    </l4x>
+    <app>
+      <z7yx>d4</z7yx><z7yx>d5</z7yx><z7yx>c4</z7yx>
+    </app>
+  `);
+
+  assert.deepEqual(readSnapshot(dom.window.document, { pathname: '/tv' })?.sanMoves, ['e4', 'e5']);
+});
+
 test('reads SAN moves from the Lichess puzzle move history', () => {
   const dom = new JSDOM(`
     <main class="puzzle puzzle-play">
