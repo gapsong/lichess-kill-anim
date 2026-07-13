@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Lichess Kill Notifier
 // @namespace    dismo/lichess-kill
-// @version      4.3.0
+// @version      4.3.1
 // @description  Killing-Animationen bei Schlagzuegen mit eigenem Chess-State statt fragilem Board-DOM.
 // @author       Dismo
 // @match        https://lichess.org/*
@@ -4784,6 +4784,19 @@
     }
     return out;
   }
+  var SKEWER_MIN_BACK = 3;
+  function skewerWinsBack(at, first, second, attackColor) {
+    const back = second.piece;
+    if (VALUE2[back.type] < SKEWER_MIN_BACK) return false;
+    const cleared = { ...at };
+    delete cleared[`${first.file},${first.rank}`];
+    const attackers = attackersOf(cleared, second.file, second.rank, attackColor);
+    if (attackers.length === 0) return false;
+    const defenders = attackersOf(cleared, second.file, second.rank, back.color);
+    const attackerVals = attackers.map((a) => VALUE2[a.type]).sort((a, b) => a - b);
+    const defenderVals = defenders.map((d) => VALUE2[d.type]).sort((a, b) => a - b);
+    return staticExchange(VALUE2[back.type], attackerVals, defenderVals) > 0;
+  }
   function detectPinsAndSkewers(at) {
     const out = [];
     for (let f = 0; f < 8; f++) {
@@ -4803,7 +4816,7 @@
           const v2 = VALUE2[second.piece.type];
           if (v2 > v1 && first.piece.type !== "p") {
             out.push({ type: "pin", side: s.color, squares: [ssq, f1, f2], line: { from: ssq, to: f2 }, label: "Pin" });
-          } else if (v1 > v2) {
+          } else if (v1 > v2 && skewerWinsBack(at, first, second, s.color)) {
             out.push({ type: "skewer", side: s.color, squares: [ssq, f1, f2], line: { from: ssq, to: f2 }, label: "Spie\xDF" });
           }
         }

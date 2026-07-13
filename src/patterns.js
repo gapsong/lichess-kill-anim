@@ -203,6 +203,29 @@ function detectRooks(at) {
   return out;
 }
 
+// A skewer is only worth flagging when grabbing the piece BEHIND actually pays
+// off. Two tunable gates, both must hold:
+//   1. SKEWER_MIN_BACK — the back piece must be at least a minor (>= 3); a mere
+//      pawn behind is a pointless skewer.
+//   2. SEE on the back square, evaluated after the front piece steps off the ray
+//      (it is removed from the board copy so the slider sees through), must be
+//      favorable (> 0) — a defended back piece where the recapture loses is not
+//      a real win and stays quiet.
+const SKEWER_MIN_BACK = 3;
+
+function skewerWinsBack(at, first, second, attackColor) {
+  const back = second.piece;
+  if (VALUE[back.type] < SKEWER_MIN_BACK) return false;
+  const cleared = { ...at };
+  delete cleared[`${first.file},${first.rank}`];
+  const attackers = attackersOf(cleared, second.file, second.rank, attackColor);
+  if (attackers.length === 0) return false;
+  const defenders = attackersOf(cleared, second.file, second.rank, back.color);
+  const attackerVals = attackers.map((a) => VALUE[a.type]).sort((a, b) => a - b);
+  const defenderVals = defenders.map((d) => VALUE[d.type]).sort((a, b) => a - b);
+  return staticExchange(VALUE[back.type], attackerVals, defenderVals) > 0;
+}
+
 function detectPinsAndSkewers(at) {
   const out = [];
   for (let f = 0; f < 8; f++) {
@@ -223,7 +246,7 @@ function detectPinsAndSkewers(at) {
         // A pinned pawn is too common/noisy to call out; only strong units (n/b/r/q) count as pinned.
         if (v2 > v1 && first.piece.type !== 'p') {
           out.push({ type: 'pin', side: s.color, squares: [ssq, f1, f2], line: { from: ssq, to: f2 }, label: 'Pin' });
-        } else if (v1 > v2) {
+        } else if (v1 > v2 && skewerWinsBack(at, first, second, s.color)) {
           out.push({ type: 'skewer', side: s.color, squares: [ssq, f1, f2], line: { from: ssq, to: f2 }, label: 'Spieß' });
         }
       }
