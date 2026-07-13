@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Lichess Kill Notifier
 // @namespace    dismo/lichess-kill
-// @version      4.3.1
+// @version      4.3.2
 // @description  Killing-Animationen bei Schlagzuegen mit eigenem Chess-State statt fragilem Board-DOM.
 // @author       Dismo
 // @match        https://lichess.org/*
@@ -4503,12 +4503,34 @@
       activePly
     };
   }
+  var SAN_RE = /^(?:O-O-O|O-O|0-0-0|0-0|[KQRBN][a-h]?[1-8]?x?[a-h][1-8]|[a-h](?:x[a-h])?[1-8](?:=[QRBN])?)[+#]?$/;
   function readSanMoves(document2) {
     for (const selector of MOVE_SELECTORS) {
       const moves = [...document2.querySelectorAll(selector)].map((element) => normalizeSan(element.textContent)).filter(Boolean);
       if (moves.length) return moves;
     }
-    return [];
+    return readSanMovesStructural(document2);
+  }
+  function readSanMovesStructural(document2) {
+    const groups = /* @__PURE__ */ new Map();
+    for (const element of document2.querySelectorAll("*")) {
+      if (element.childElementCount > 0) continue;
+      const san = normalizeSan(element.textContent);
+      if (!san || !SAN_RE.test(san)) continue;
+      const parent = element.parentElement;
+      if (!parent) continue;
+      let list = groups.get(parent);
+      if (!list) {
+        list = [];
+        groups.set(parent, list);
+      }
+      list.push(san);
+    }
+    let best = [];
+    for (const list of groups.values()) {
+      if (list.length > best.length) best = list;
+    }
+    return best;
   }
   function readInitialFen(document2) {
     const el = document2.querySelector("[data-fen]");
