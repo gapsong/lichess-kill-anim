@@ -645,11 +645,11 @@ function drawHanging(ctx, size, pattern, now, theme, blackO) {
 }
 
 // Draws one pattern's animated highlight onto ctx. `size` is the board edge in px,
-// `blackO` whether the board is flipped (black at the bottom). `fade` (1 = full
-// strength) is only honoured by the "connections" (battery, rooks) and "state"
-// (outpost) patterns, which PatternOverlay drops to a low, steady value once their
-// one-time intro pulse has played; every other pattern always renders at full
-// strength and simply ignores it.
+// `blackO` whether the board is flipped (black at the bottom). Every routine draws
+// at full strength; the intro-then-faint lifecycle is applied uniformly by
+// PatternOverlay, which dims the whole hint via a globalAlpha-scaling context once
+// its one-time intro pulse has played (see scaleAlpha there). The `fade` parameter
+// is kept for direct/legacy callers and left at 1 by the overlay.
 export function drawPatternFx(ctx, size, pattern, now, theme = PATTERN_THEMES[0], blackO = false, fade = 1) {
   switch (pattern.type) {
     case 'fianchetto': return drawFianchetto(ctx, size, pattern, now, theme, blackO);
