@@ -114,7 +114,14 @@ export class PatternOverlay {
       this.clear();
       return;
     }
-    this._start();
+    // Run the rAF loop only while a hint is still blinking. Once every hint has
+    // blinked out, the loop stops and stays stopped (no idle 30fps redraws) until a
+    // fresh pattern arrives — this is what keeps the overlay off Lichess's back.
+    if (this.patterns.some((p) => this.fadeFor(p, now) > 0)) {
+      this._start();
+    } else if (this.raf == null) {
+      this._frame(now); // draw the final (empty) frame once; no loop
+    }
   }
 
   clear() {
@@ -158,15 +165,18 @@ export class PatternOverlay {
     if (!state || !state.context) return;
     const { context, size, isBlackOrientation } = state;
     context.clearRect(0, 0, size, size);
+    let anyVisible = false;
     for (const pattern of this.patterns) {
       const fade = this.fadeFor(pattern, now);
-      // Base opacity for elements that draw at the ambient globalAlpha; scaleAlpha
-      // additionally dims every explicit globalAlpha the routine sets, so the whole
-      // hint fades uniformly during its resting state.
+      if (fade <= 0) continue; // finished blinking — nothing to draw
+      anyVisible = true;
+      // scaleAlpha dims every explicit globalAlpha the routine sets, so the whole
+      // hint fades uniformly as it blinks out.
       context.globalAlpha = fade;
       const ctx = fade < 1 ? scaleAlpha(context, fade) : context;
       drawPatternFx(ctx, size, pattern, now, this.theme, isBlackOrientation);
     }
     context.globalAlpha = 1;
+    if (!anyVisible) this._stop(); // all hints blinked out — stop the idle loop
   }
 }
