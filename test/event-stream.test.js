@@ -3,10 +3,13 @@ import test from 'node:test';
 
 import { CaptureEventStream } from '../src/event-stream.js';
 
-// Entering a game with prior captures must be silent (baseline). The first scan
-// of any new context seeds the already-played captures into `seen` without
-// emitting; only captures that first appear in a later scan animate. The tests
-// below were updated deliberately from the old "emit all on first scan" shape.
+// Entering a game with prior captures must be silent (baseline). On the LIVE/TV
+// path (activePly == null) the first scan of a new context seeds the already-
+// played captures into `seen` without emitting, so only captures that first
+// appear in a later scan animate. On the ANALYSIS path (activePly != null)
+// animations are navigation-driven: the first scan is still silent, but it does
+// NOT pre-seed `seen` — so clicking onto any capture ply (including ones earlier
+// than the entry cursor) fires. The tests below reflect both paths.
 
 test('live entry with prior captures is silent, then emits a later capture once', () => {
   const stream = new CaptureEventStream();
@@ -60,6 +63,38 @@ test('game switch re-baselines silently, then emits only later captures', () => 
   const events = stream.next(game2Live);
   assert.equal(events.length, 1);
   assert.equal(events[0].san, 'Qxd5');
+});
+
+// Regression for commit d6d1120 ("silent baseline on entry"): opening an
+// analysis board that already holds a full game leaves the cursor at the final
+// ply. The old baseline seeded EVERY capture up to activePly into `seen`, so
+// navigating back onto any earlier capture found it already seen and never
+// animated — the captain's "on the analysis board I see nothing". The analysis
+// path must not pre-seed; navigating onto a capture below the entry cursor fires.
+test('analysis entry at the game end still fires when navigating onto an earlier capture', () => {
+  const stream = new CaptureEventStream();
+  const base = {
+    id: 'game-1',
+    initialFen: null,
+    // captures at ply 3 (exd5) and ply 6 (Nxd5); a full game already loaded
+    sanMoves: ['e4', 'd5', 'exd5', 'Nf6', 'c4', 'Nxd5']
+  };
+
+  // Open sitting at the final ply (6) — the common case. Entry is silent.
+  assert.deepEqual(stream.next({ ...base, activePly: 6 }), []);
+  // A redundant rescan at the same ply stays silent (no burst on entry).
+  assert.deepEqual(stream.next({ ...base, activePly: 6 }), []);
+
+  // Navigate back onto the earlier exd5 capture (ply 3, below the entry cursor):
+  // it MUST animate.
+  const back = stream.next({ ...base, activePly: 3 });
+  assert.equal(back.length, 1);
+  assert.equal(back[0].san, 'exd5');
+
+  // And forward onto the ply-6 capture fires it too.
+  const fwd = stream.next({ ...base, activePly: 6 });
+  assert.equal(fwd.length, 1);
+  assert.equal(fwd[0].san, 'Nxd5');
 });
 
 test('activePly entry on a capture ply is silent; advancing to a new capture fires', () => {
