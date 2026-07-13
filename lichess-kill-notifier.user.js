@@ -4836,7 +4836,18 @@
     }
     return out;
   }
-  var HOTSPOT_FIRES = (attackers, defenders) => attackers >= 2 && attackers >= defenders;
+  function seeGain(onSquareValue, moverVals, otherVals) {
+    if (moverVals.length === 0) return 0;
+    const cheapest = moverVals[0];
+    if (cheapest === VALUE2.k && otherVals.length > 0) return 0;
+    return Math.max(0, onSquareValue - seeGain(cheapest, otherVals, moverVals.slice(1)));
+  }
+  function staticExchange(victimValue, attackerVals, defenderVals) {
+    if (attackerVals.length === 0) return 0;
+    const cheapest = attackerVals[0];
+    if (cheapest === VALUE2.k && defenderVals.length > 0) return 0;
+    return victimValue - seeGain(cheapest, defenderVals, attackerVals.slice(1));
+  }
   function detectHotspots(at) {
     const out = [];
     for (let f = 0; f < 8; f++) {
@@ -4845,8 +4856,11 @@
         if (!p) continue;
         const enemyColor = p.color === "w" ? "b" : "w";
         const attackers = attackersOf(at, f, r, enemyColor);
+        if (attackers.length === 0) continue;
         const defenders = attackersOf(at, f, r, p.color);
-        if (!HOTSPOT_FIRES(attackers.length, defenders.length)) continue;
+        const attackerVals = attackers.map((a) => VALUE2[a.type]).sort((a, b) => a - b);
+        const defenderVals = defenders.map((d) => VALUE2[d.type]).sort((a, b) => a - b);
+        if (staticExchange(VALUE2[p.type], attackerVals, defenderVals) <= 0) continue;
         out.push({
           type: "hotspot",
           side: enemyColor,
