@@ -75,10 +75,25 @@ test('a fade-lifecycle pattern that resolves and later reappears gets a fresh in
   assert.equal(overlay.fadeFor(pattern, 6000), 1);
 });
 
-test('patterns outside the fade lifecycle (e.g. fortress) always render at full strength', () => {
+test('the intro-then-faint lifecycle now applies to every pattern type (e.g. fortress)', () => {
   const clock = { t: 0 };
   const overlay = overlayAt(clock);
   const pattern = fortressPattern();
   overlay.render([pattern]);
-  assert.equal(overlay.fadeFor(pattern, 10000), 1);
+  assert.equal(overlay.fadeFor(pattern, 0), 1); // pops at full strength on arrival
+  assert.equal(overlay.fadeFor(pattern, 899), 1); // still inside the one intro pulse
+  assert.ok(overlay.fadeFor(pattern, 10000) < 0.3); // settles to a faint steady state
+});
+
+test('a non-connections pattern (e.g. fork) also gets the fresh-intro-on-reappear behaviour', () => {
+  const clock = { t: 0 };
+  const overlay = overlayAt(clock);
+  const pattern = { type: 'fork', side: 'w', squares: ['e5', 'c7', 'g7'], line: null, label: 'Gabel' };
+  overlay.render([pattern]);
+  assert.ok(overlay.fadeFor(pattern, 5000) < 0.3); // settled after its intro
+  clock.t = 5000;
+  overlay.render([]); // resolves and clears firstSeen
+  clock.t = 6000;
+  overlay.render([pattern]); // reappears -> fresh pop
+  assert.equal(overlay.fadeFor(pattern, 6000), 1);
 });

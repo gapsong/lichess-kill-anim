@@ -8,16 +8,35 @@ export function patternColor(side, isBlackOrientation) {
   return side === bottomSide ? GREEN : RED;
 }
 
-// "Connections" (battery, connected/doubled rooks) and "state" (outpost) hints play
-// one strong intro pulse the moment they first appear, then settle to a faint,
-// low-opacity resting state for as long as the pattern stays on the board. Every
-// other pattern keeps looping at full strength (unchanged).
-const FADE_LIFECYCLE_TYPES = new Set(['battery', 'rooks', 'outpost', 'hotspot']);
+// EVERY pattern hint plays one strong intro pulse the moment it first appears
+// (INTRO_MS), then settles to a faint, low-opacity resting state for as long as it
+// stays on the board — a universal "pop, then fade to a calm ambient hint"
+// lifecycle. PatternOverlay tracks each pattern's first-seen time (firstSeen) and
+// applies the resulting opacity uniformly at render time (see _frame / scaleAlpha),
+// so no individual draw routine needs to know about the lifecycle.
 const INTRO_MS = 900;
 const STEADY_FADE = 0.16;
 
 function patternKey(pattern) {
   return `${pattern.type}|${pattern.side}|${pattern.squares.join(',')}`;
+}
+
+// Wraps a 2D context so every `globalAlpha = x` assignment becomes `x * fade`,
+// leaving all other drawing calls (geometry, styles, methods) untouched. Canvas
+// globalAlpha is an absolute value, so this proxy is the single place that turns a
+// pattern's many per-element opacities into one uniformly dimmed layer during its
+// faint resting state — no draw routine has to thread `fade` through by hand.
+function scaleAlpha(ctx, fade) {
+  return new Proxy(ctx, {
+    get(target, prop) {
+      const value = target[prop];
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+    set(target, prop, value) {
+      target[prop] = prop === 'globalAlpha' ? value * fade : value;
+      return true;
+    }
+  });
 }
 
 export class PatternOverlay {
@@ -105,10 +124,9 @@ export class PatternOverlay {
     if (state?.context) state.context.clearRect(0, 0, state.size, state.size);
   }
 
-  // 1 during a fade-lifecycle pattern's one-time intro pulse, STEADY_FADE once it
-  // has settled; always 1 for patterns outside the fade lifecycle.
+  // 1 during a pattern's one-time intro pulse, STEADY_FADE once it has settled.
+  // Applies to every pattern type — the universal pop-then-faint lifecycle.
   fadeFor(pattern, atMs) {
-    if (!FADE_LIFECYCLE_TYPES.has(pattern.type)) return 1;
     const firstSeenAt = this.firstSeen.get(patternKey(pattern));
     if (firstSeenAt == null) return 1;
     return (atMs - firstSeenAt) < INTRO_MS ? 1 : STEADY_FADE;
@@ -138,7 +156,14 @@ export class PatternOverlay {
     const { context, size, isBlackOrientation } = state;
     context.clearRect(0, 0, size, size);
     for (const pattern of this.patterns) {
-      drawPatternFx(context, size, pattern, now, this.theme, isBlackOrientation, this.fadeFor(pattern, now));
+      const fade = this.fadeFor(pattern, now);
+      // Base opacity for elements that draw at the ambient globalAlpha; scaleAlpha
+      // additionally dims every explicit globalAlpha the routine sets, so the whole
+      // hint fades uniformly during its resting state.
+      context.globalAlpha = fade;
+      const ctx = fade < 1 ? scaleAlpha(context, fade) : context;
+      drawPatternFx(ctx, size, pattern, now, this.theme, isBlackOrientation);
     }
+    context.globalAlpha = 1;
   }
 }
