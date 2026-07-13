@@ -21,6 +21,19 @@ test('no battery when a piece blocks the file', () => {
   assert.ok(!has(p, 'battery'));
 });
 
+test('battery must bear on the opponent: aimed backwards / blocked ahead does not fire', () => {
+  // R d4 + Q d5 aligned, but own pawn on d6 blocks the way to the enemy and the only open
+  // line runs back toward white's own half — the battery bears on nothing useful.
+  const p = patterns('6k1/8/3P4/3Q4/3R4/8/8/K7 w - - 0 1');
+  assert.ok(!has(p, 'battery'));
+});
+
+test('battery fires when it bears on an enemy piece even without a fully open file', () => {
+  // Q d1 behind R d3, enemy knight on d5 in the line of fire.
+  const p = patterns('6k1/8/8/3n4/8/3R4/8/3Q2K1 w - - 0 1');
+  assert.ok(has(p, 'battery', 'w'));
+});
+
 test('rooks: doubled rooks on a file', () => {
   const p = patterns('6k1/8/8/8/8/3R4/8/3R2K1 w - - 0 1');
   assert.ok(has(p, 'rooks', 'w'));
