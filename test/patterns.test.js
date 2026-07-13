@@ -90,31 +90,51 @@ test('two linked pawns are not yet a chain', () => {
   assert.ok(!has(patterns('6k1/8/8/8/8/2P5/1P6/6K1 w - - 0 1'), 'pawn-chain'));
 });
 
-test('hotspot: a square attacked by four or more pieces', () => {
-  const h = patterns('6k1/8/8/4q3/2N3N1/8/1B5B/6K1 w - - 0 1').find((x) => x.type === 'hotspot');
-  assert.ok(h && h.side === 'w');
-  assert.equal(h.squares[0], 'e5'); // focal square first
-  assert.ok(h.squares.length - 1 >= 4); // four+ attackers
+// The hotspot fires only when the attacking side genuinely WINS material by
+// going into the exchange (Static Exchange Evaluation > 0), not on a raw
+// attacker/defender count. `hotspotAt` isolates the target square so unrelated
+// side-effect hotspots elsewhere on the board don't disturb the assertion.
+function hotspotAt(list, square) {
+  return list.find((p) => p.type === 'hotspot' && p.squares[0] === square);
+}
+
+test('hotspot: queen + bishop battering a DEFENDED pawn does NOT fire (SEE < 0)', () => {
+  // d5 black pawn, defended by the c6 pawn; white Qa2 and Bh1 both bear on d5.
+  // The cheapest attacker (bishop, 3) is worth more than the pawn it wins (1),
+  // so the exchange nets a loss for white -> no hotspot. This is the captain's
+  // example of a light that should stay dark.
+  assert.ok(!hotspotAt(patterns('6k1/8/2p5/3p4/8/8/Q7/6KB w - - 0 1'), 'd5'));
 });
 
-test('hotspot: an occupied piece with attackers >= defenders and >= 2 attackers fires', () => {
-  // black knight on d5 attacked by two white pawns (c4, e4), no defenders
-  const h = patterns('6k1/8/8/3n4/2P1P3/8/8/6K1 w - - 0 1').find((x) => x.type === 'hotspot');
+test('hotspot: a cheap piece winning an under-defended heavier piece fires (SEE > 0)', () => {
+  // white bishop (3) attacks the d5 rook (5), defended only by the c6 pawn (1):
+  // Bxr, pxB -> white nets +2, a real win -> marked.
+  const h = hotspotAt(patterns('6k1/8/2p5/3r4/8/8/B7/6K1 w - - 0 1'), 'd5');
   assert.ok(h && h.side === 'w'); // side = the attacking colour
-  assert.equal(h.squares[0], 'd5'); // pressured piece first
-  assert.equal(h.squares.length - 1, 2); // its two attacker squares
+  assert.equal(h.squares[1], 'a2'); // attacker line preserved
+});
+
+test('hotspot: a pure even trade does NOT fire (SEE == 0)', () => {
+  // d5 black pawn vs e4 white pawn, each defended by a friendly pawn (c6 / d3):
+  // an even pawn trade nets nothing for either side -> no hotspot anywhere.
+  assert.ok(!has(patterns('6k1/8/2p5/3p4/4P3/3P4/8/6K1 w - - 0 1'), 'hotspot'));
+});
+
+test('hotspot: fires only once the pile-up wins, not per single attacker (SEE > 0)', () => {
+  // d5 black pawn defended by the c6 pawn. Alone, neither white attacker wins:
+  // the e4 pawn is an even trade (SEE 0), the a2 bishop loses (SEE -2). Together
+  // the cheapest-first exchange nets +1, so only the combined pile-up marks d5.
+  assert.ok(!hotspotAt(patterns('6k1/8/2p5/3p4/4P3/8/8/6K1 w - - 0 1'), 'd5')); // e4 pawn alone
+  assert.ok(!hotspotAt(patterns('6k1/8/2p5/3p4/8/8/B7/6K1 w - - 0 1'), 'd5'));   // a2 bishop alone
+  const h = hotspotAt(patterns('6k1/8/2p5/3p4/4P3/8/B7/6K1 w - - 0 1'), 'd5');    // both
+  assert.ok(h && h.side === 'w');
+  assert.equal(h.squares.length - 1, 2); // both attacker squares drawn
 });
 
 test('hotspot: an empty square attacked by many pieces does NOT fire', () => {
   // e5 is empty; c4/g4 knights and b2/h2 bishops all bear on it, but there is
-  // no piece there to gang up on.
-  assert.ok(!has(patterns('6k1/8/8/8/2N3N1/8/1B5B/6K1 w - - 0 1'), 'hotspot'));
-});
-
-test('hotspot: a well-defended piece (defenders > attackers) does NOT fire', () => {
-  // black knight on d5: 2 white attackers (c4, e4 pawns), 3 black defenders
-  // (c6, e6 pawns and the d8 rook).
-  assert.ok(!has(patterns('3r2k1/8/2p1p3/3n4/2P1P3/8/8/6K1 w - - 0 1'), 'hotspot'));
+  // no piece there to win -> SEE never runs -> no hotspot.
+  assert.ok(!hotspotAt(patterns('6k1/8/8/8/2N3N1/8/1B5B/6K1 w - - 0 1'), 'e5'));
 });
 
 test('open file: a rook on a pawn-free file', () => {

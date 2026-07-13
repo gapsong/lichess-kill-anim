@@ -262,14 +262,37 @@ function detectPawnChains(at) {
   return out;
 }
 
-// A hotspot is a real piece under a genuine pile-up: it fires only for an
-// occupied square where the enemy has ganged up at least as hard as the
-// defence. Tune the firing rule in this ONE place — bump `>= 2` to `>= 3` to
-// demand more attackers, or change the second `>=` to `>` to require the
-// attackers to strictly outnumber the defenders. A lone attacker (< 2) is left
-// to the "hanging piece" hint, so the hotspot always means a true pile-up.
-const HOTSPOT_FIRES = (attackers, defenders) => attackers >= 2 && attackers >= defenders;
+// Static Exchange Evaluation on an occupied square. `onSquareValue` is the value
+// of the piece currently sitting there (the one about to be captured);
+// `moverVals`/`otherVals` are the VALUEs of the side-to-move's and the other
+// side's remaining attackers, each sorted ascending so the cheapest unit always
+// captures first. Returns the best net material the side to move can win,
+// standing pat (0) whenever capturing would lose material. A king may only
+// capture when the other side has no piece left to recapture — it must not
+// capture into defence.
+function seeGain(onSquareValue, moverVals, otherVals) {
+  if (moverVals.length === 0) return 0;
+  const cheapest = moverVals[0];
+  if (cheapest === VALUE.k && otherVals.length > 0) return 0;
+  return Math.max(0, onSquareValue - seeGain(cheapest, otherVals, moverVals.slice(1)));
+}
 
+// Net material the attacking side wins by initiating the capture sequence on the
+// occupied square. The first attacker is committed (it is the premise "what if I
+// capture here"); every later ply is optional. < 0 means the attacker loses
+// material, == 0 an even trade — neither is a real threat.
+function staticExchange(victimValue, attackerVals, defenderVals) {
+  if (attackerVals.length === 0) return 0;
+  const cheapest = attackerVals[0];
+  if (cheapest === VALUE.k && defenderVals.length > 0) return 0; // lone king can't win a defended square
+  return victimValue - seeGain(cheapest, defenderVals, attackerVals.slice(1));
+}
+
+// A hotspot marks an occupied square where the attacking side genuinely WINS
+// material by going into the exchange (SEE > 0). This is stricter than a raw
+// attacker/defender count: a queen + bishop battering a defended pawn pile more
+// force on than the defence, but the cheapest attacker (the bishop) is worth more
+// than the pawn, so the exchange nets a loss — SEE <= 0 and the square stays dark.
 function detectHotspots(at) {
   const out = [];
   for (let f = 0; f < 8; f++) {
@@ -278,8 +301,11 @@ function detectHotspots(at) {
       if (!p) continue;
       const enemyColor = p.color === 'w' ? 'b' : 'w';
       const attackers = attackersOf(at, f, r, enemyColor);
+      if (attackers.length === 0) continue;
       const defenders = attackersOf(at, f, r, p.color);
-      if (!HOTSPOT_FIRES(attackers.length, defenders.length)) continue;
+      const attackerVals = attackers.map((a) => VALUE[a.type]).sort((a, b) => a - b);
+      const defenderVals = defenders.map((d) => VALUE[d.type]).sort((a, b) => a - b);
+      if (staticExchange(VALUE[p.type], attackerVals, defenderVals) <= 0) continue;
       out.push({
         type: 'hotspot',
         side: enemyColor,
