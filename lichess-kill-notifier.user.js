@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Lichess Kill Notifier
 // @namespace    dismo/lichess-kill
-// @version      4.3.0
+// @version      4.3.1
 // @description  Killing-Animationen bei Schlagzuegen mit eigenem Chess-State statt fragilem Board-DOM.
 // @author       Dismo
 // @match        https://lichess.org/*
@@ -4784,6 +4784,19 @@
     }
     return out;
   }
+  var SKEWER_MIN_BACK = 3;
+  function skewerWinsBack(at, first, second, attackColor) {
+    const back = second.piece;
+    if (VALUE2[back.type] < SKEWER_MIN_BACK) return false;
+    const cleared = { ...at };
+    delete cleared[`${first.file},${first.rank}`];
+    const attackers = attackersOf(cleared, second.file, second.rank, attackColor);
+    if (attackers.length === 0) return false;
+    const defenders = attackersOf(cleared, second.file, second.rank, back.color);
+    const attackerVals = attackers.map((a) => VALUE2[a.type]).sort((a, b) => a - b);
+    const defenderVals = defenders.map((d) => VALUE2[d.type]).sort((a, b) => a - b);
+    return staticExchange(VALUE2[back.type], attackerVals, defenderVals) > 0;
+  }
   function detectPinsAndSkewers(at) {
     const out = [];
     for (let f = 0; f < 8; f++) {
@@ -4803,7 +4816,7 @@
           const v2 = VALUE2[second.piece.type];
           if (v2 > v1 && first.piece.type !== "p") {
             out.push({ type: "pin", side: s.color, squares: [ssq, f1, f2], line: { from: ssq, to: f2 }, label: "Pin" });
-          } else if (v1 > v2) {
+          } else if (v1 > v2 && skewerWinsBack(at, first, second, s.color)) {
             out.push({ type: "skewer", side: s.color, squares: [ssq, f1, f2], line: { from: ssq, to: f2 }, label: "Spie\xDF" });
           }
         }
@@ -5683,11 +5696,22 @@
   }
 
   // src/pattern-overlay.js
-  var FADE_LIFECYCLE_TYPES = /* @__PURE__ */ new Set(["battery", "rooks", "outpost", "hotspot"]);
   var INTRO_MS = 900;
   var STEADY_FADE = 0.16;
   function patternKey(pattern) {
     return `${pattern.type}|${pattern.side}|${pattern.squares.join(",")}`;
+  }
+  function scaleAlpha(ctx, fade) {
+    return new Proxy(ctx, {
+      get(target, prop) {
+        const value = target[prop];
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+      set(target, prop, value) {
+        target[prop] = prop === "globalAlpha" ? value * fade : value;
+        return true;
+      }
+    });
   }
   var PatternOverlay = class {
     constructor({
@@ -5769,10 +5793,9 @@
       const state = this.sync();
       if (state?.context) state.context.clearRect(0, 0, state.size, state.size);
     }
-    // 1 during a fade-lifecycle pattern's one-time intro pulse, STEADY_FADE once it
-    // has settled; always 1 for patterns outside the fade lifecycle.
+    // 1 during a pattern's one-time intro pulse, STEADY_FADE once it has settled.
+    // Applies to every pattern type — the universal pop-then-faint lifecycle.
     fadeFor(pattern, atMs) {
-      if (!FADE_LIFECYCLE_TYPES.has(pattern.type)) return 1;
       const firstSeenAt = this.firstSeen.get(patternKey(pattern));
       if (firstSeenAt == null) return 1;
       return atMs - firstSeenAt < INTRO_MS ? 1 : STEADY_FADE;
@@ -5802,8 +5825,12 @@
       const { context, size, isBlackOrientation } = state;
       context.clearRect(0, 0, size, size);
       for (const pattern of this.patterns) {
-        drawPatternFx(context, size, pattern, now, this.theme, isBlackOrientation, this.fadeFor(pattern, now));
+        const fade = this.fadeFor(pattern, now);
+        context.globalAlpha = fade;
+        const ctx = fade < 1 ? scaleAlpha(context, fade) : context;
+        drawPatternFx(ctx, size, pattern, now, this.theme, isBlackOrientation);
       }
+      context.globalAlpha = 1;
     }
   };
 
