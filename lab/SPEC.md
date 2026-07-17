@@ -93,7 +93,7 @@ export const timeline = { /* optional override für Keyframes */ };
 
 ### Phase 3 (done): Generator-Skill
 - `.claude/commands/lab-generate.md` als Custom Slash-Command
-- Liest `docs/ANIMATION-PRINCIPLES.md` + letztes Round-Log unter
+- Liest `docs/dev/ANIMATION-PRINCIPLES.md` + letztes Round-Log unter
   `lab/gan-harness/rounds/`
 - Orchestriert Phase 2 (`npm run lab:generate -- <piece> <champion>` →
   Antwort in Tempfile → `--apply <tmp>`); kein neues File-I/O

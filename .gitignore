@@ -2,6 +2,14 @@ node_modules/
 dist/
 npm-debug.log*
 
+# Personal agent tooling / dev cruft — keep out of the public repo
+.agents/
+.claude/
+skills/
+skills-lock.json
+artifacts/
+.vscode/
+
 # Animation Lab
 lab/node_modules/
 lab/archive/
