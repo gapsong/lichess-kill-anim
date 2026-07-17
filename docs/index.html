@@ -1,0 +1,461 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lichess Kill Animations — particle effects for every capture</title>
+<meta name="description" content="A Tampermonkey userscript for lichess.org: signature kill animations on every capture, plus animated tactical pattern hints. Unofficial, open source, MIT.">
+<style>
+  :root {
+    --bg: #f4f3ee;
+    --surface: #fdfcf9;
+    --ink: #23251f;
+    --muted: #6b6e63;
+    --line: #ddddd2;
+    --accent: #7a3fc4;
+    --accent-ink: #fdfcf9;
+    --good: #4a7a3d;
+    --bad: #b5482f;
+    --board-a: #22261f;
+    --board-b: #2d3328;
+    --hero-ink: #e9e7df;
+    --hero-muted: #9a9d92;
+    --mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #131512;
+      --surface: #1b1e19;
+      --ink: #e9e7df;
+      --muted: #9a9d92;
+      --line: #2c302a;
+      --accent: #b073f0;
+      --accent-ink: #16101f;
+      --good: #7fb069;
+      --bad: #e06c5a;
+    }
+  }
+
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--sans);
+    line-height: 1.6;
+    font-size: 16px;
+  }
+  a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 3px; }
+  a:focus-visible, button:focus-visible, .btn:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
+  }
+
+  .wrap { max-width: 62rem; margin: 0 auto; padding: 0 1.25rem; }
+
+  /* ---------- hero: committed to the dark board world in both themes ---------- */
+  .hero {
+    position: relative;
+    background: #131512;
+    color: var(--hero-ink);
+    overflow: hidden;
+    border-bottom: 1px solid #2c302a;
+  }
+  .hero canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+  .hero .wrap {
+    position: relative;
+    padding-top: 5.5rem;
+    padding-bottom: 5.5rem;
+  }
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 0.85rem;
+    letter-spacing: 0.08em;
+    color: #b073f0;
+    margin: 0 0 1rem;
+  }
+  .eyebrow .check { color: #7fb069; }
+  h1 {
+    font-size: clamp(2.1rem, 5.5vw, 3.6rem);
+    line-height: 1.05;
+    letter-spacing: -0.02em;
+    font-weight: 800;
+    margin: 0 0 1rem;
+    max-width: 15ch;
+    text-wrap: balance;
+  }
+  .hero p.lead {
+    max-width: 46ch;
+    color: var(--hero-muted);
+    font-size: 1.06rem;
+    margin: 0 0 2rem;
+  }
+  .hero .lead strong { color: var(--hero-ink); font-weight: 600; }
+
+  .cta-row { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center; }
+  .btn {
+    display: inline-block;
+    font-weight: 700;
+    text-decoration: none;
+    padding: 0.85rem 1.5rem;
+    border-radius: 4px;
+    font-size: 1rem;
+  }
+  .btn-install {
+    background: #b073f0;
+    color: #16101f;
+    box-shadow: 0 0 0 1px rgba(176,115,240,.4), 0 4px 24px rgba(176,115,240,.25);
+  }
+  .btn-install:hover { background: #c08ff5; }
+  .btn-ghost {
+    color: var(--hero-ink);
+    box-shadow: inset 0 0 0 1px #3a3f37;
+  }
+  .btn-ghost:hover { box-shadow: inset 0 0 0 1px #5a6055; }
+  .cta-note {
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    color: var(--hero-muted);
+    margin: 1rem 0 0;
+  }
+
+  /* ---------- sections ---------- */
+  section { padding: 3.5rem 0; }
+  section + section { border-top: 1px solid var(--line); }
+  .kicker {
+    font-family: var(--mono);
+    font-size: 0.8rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0 0 0.5rem;
+  }
+  h2 {
+    font-size: 1.6rem;
+    letter-spacing: -0.01em;
+    margin: 0 0 1.5rem;
+    text-wrap: balance;
+  }
+  p { max-width: 62ch; }
+  .muted { color: var(--muted); }
+
+  /* install steps — a real sequence */
+  .steps { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 1rem; margin: 0; padding: 0; list-style: none; }
+  .steps li {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 1.25rem;
+    min-width: 0;
+  }
+  .steps .n {
+    font-family: var(--mono);
+    color: var(--accent);
+    font-size: 0.85rem;
+    display: block;
+    margin-bottom: 0.5rem;
+  }
+  .steps h3 { margin: 0 0 0.4rem; font-size: 1.02rem; }
+  .steps p { margin: 0; font-size: 0.92rem; color: var(--muted); }
+
+  /* what it does */
+  .cols { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 1rem; }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 1.5rem;
+    min-width: 0;
+  }
+  .card h3 { margin: 0 0 0.75rem; font-size: 1.15rem; }
+  .card > p { font-size: 0.95rem; color: var(--muted); }
+
+  .fx-table { width: 100%; border-collapse: collapse; font-size: 0.95rem; }
+  .fx-table td { padding: 0.45rem 0.5rem 0.45rem 0; border-bottom: 1px solid var(--line); }
+  .fx-table tr:last-child td { border-bottom: 0; }
+  .fx-table .glyph { font-size: 1.35rem; line-height: 1; width: 2rem; }
+  .fx-table .fx {
+    font-family: var(--mono);
+    color: var(--accent);
+    text-align: right;
+    white-space: nowrap;
+  }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 0.4rem; padding: 0; margin: 0 0 1rem; list-style: none; }
+  .chips li {
+    font-family: var(--mono);
+    font-size: 0.8rem;
+    padding: 0.25rem 0.6rem;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    color: var(--muted);
+  }
+  .legend { font-size: 0.88rem; margin-bottom: 1rem; }
+  .dot { display: inline-block; width: 0.6em; height: 0.6em; border-radius: 50%; margin-right: 0.3em; }
+  .dot.good { background: var(--good); }
+  .dot.bad { background: var(--bad); }
+
+  .fairplay {
+    border-left: 3px solid var(--accent);
+    padding: 0.6rem 1rem;
+    font-size: 0.88rem;
+    color: var(--muted);
+    margin: 0;
+  }
+
+  /* demo slot */
+  .demo-slot {
+    border: 1px dashed var(--line);
+    border-radius: 4px;
+    background: var(--surface);
+    aspect-ratio: 16 / 9;
+    display: grid;
+    place-items: center;
+    text-align: center;
+    padding: 1.5rem;
+  }
+  .demo-slot .san { font-family: var(--mono); color: var(--accent); font-size: 0.85rem; margin: 0 0 0.5rem; }
+  .demo-slot p { margin: 0; color: var(--muted); font-size: 0.95rem; max-width: 38ch; }
+
+  .pages-line {
+    font-family: var(--mono);
+    font-size: 0.85rem;
+    color: var(--muted);
+  }
+
+  footer {
+    border-top: 1px solid var(--line);
+    padding: 2.5rem 0 3rem;
+    font-size: 0.88rem;
+    color: var(--muted);
+  }
+  footer .links { display: flex; flex-wrap: wrap; gap: 1.25rem; margin-bottom: 1rem; }
+  footer p { margin: 0.25rem 0; max-width: none; }
+
+  @media (max-width: 720px) {
+    .steps, .cols { grid-template-columns: 1fr; }
+    .hero .wrap { padding-top: 4rem; padding-bottom: 4rem; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+  }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <canvas id="fx" aria-hidden="true"></canvas>
+  <div class="wrap">
+    <p class="eyebrow">24. Qxf7#<span class="check"> ✓ capture</span></p>
+    <h1>Every capture deserves a kill animation.</h1>
+    <p class="lead">
+      A free userscript for <strong>lichess.org</strong>: signature particle effects on every
+      capture — nukes, slashes, zaps, a touch of board shake — plus animated hints for tactical
+      patterns. Rendered on its own overlay canvas; the site itself is never touched.
+    </p>
+    <div class="cta-row">
+      <a class="btn btn-install" href="https://gist.githubusercontent.com/gapsong/8b78fdf058b436e5b439b86ef2a816b4/raw/lichess-kill-notifier.user.js">Install the userscript</a>
+      <a class="btn btn-ghost" href="https://github.com/gapsong/lichess-kill-anim">View on GitHub</a>
+    </div>
+    <p class="cta-note">requires Tampermonkey · auto-updates · open source (MIT)</p>
+  </div>
+</header>
+
+<main>
+  <section id="install">
+    <div class="wrap">
+      <p class="kicker">How to install</p>
+      <h2>Three moves, no build step.</h2>
+      <ol class="steps">
+        <li>
+          <span class="n">1.</span>
+          <h3>Install Tampermonkey</h3>
+          <p>Get the <a href="https://www.tampermonkey.net/">Tampermonkey extension</a> for Chrome, Firefox, Edge or Safari.</p>
+        </li>
+        <li>
+          <span class="n">2.</span>
+          <h3>Click Install</h3>
+          <p>The button above opens the script in Tampermonkey — confirm the install. Updates arrive automatically from then on.</p>
+        </li>
+        <li>
+          <span class="n">3.</span>
+          <h3>Open lichess.org</h3>
+          <p>Play, watch TV or solve puzzles. The first capture speaks for itself.</p>
+        </li>
+      </ol>
+    </div>
+  </section>
+
+  <section id="what">
+    <div class="wrap">
+      <p class="kicker">What it does</p>
+      <h2>Signature effects per piece, hints per position.</h2>
+      <div class="cols">
+        <div class="card">
+          <h3>Kill animations</h3>
+          <p>Each attacking piece has its own effect, and every effect scales with the value of the
+          piece it removes — taking a queen is the crescendo, not just another capture. Optional
+          synth sound and a Vlambeer-style board shake on queen captures.</p>
+          <table class="fx-table">
+            <tbody>
+              <tr><td class="glyph">♛</td><td>Queen</td><td class="fx">nuke</td></tr>
+              <tr><td class="glyph">♜</td><td>Rook</td><td class="fx">smash</td></tr>
+              <tr><td class="glyph">♞</td><td>Knight</td><td class="fx">slash</td></tr>
+              <tr><td class="glyph">♝</td><td>Bishop</td><td class="fx">zap</td></tr>
+              <tr><td class="glyph">♟</td><td>Pawn</td><td class="fx">pixel</td></tr>
+              <tr><td class="glyph">♚</td><td>King falls</td><td class="fx">ascension</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="card">
+          <h3>Pattern hints</h3>
+          <p>The position is analysed live with chess.js — no engine — and matching formations
+          light up right on the board, then settle into a faint reminder while they last.</p>
+          <p class="legend"><span class="dot good"></span>your side&nbsp;&nbsp;<span class="dot bad"></span>opponent</p>
+          <ul class="chips">
+            <li>pin</li><li>skewer</li><li>fork</li><li>battery</li><li>hotspot</li>
+            <li>hanging piece</li><li>outpost</li><li>fianchetto</li><li>passed pawn</li>
+            <li>open file</li><li>pawn chain</li><li>king fortress</li><li>connected rooks</li>
+          </ul>
+          <p class="fairplay">Pattern hints are a study aid — use them on analysis boards, puzzles
+          and game review, not to gain an edge in rated games.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="demo">
+    <div class="wrap">
+      <p class="kicker">Demo</p>
+      <h2>See it on a real board.</h2>
+      <div class="demo-slot">
+        <div>
+          <p class="san">// demo capture coming soon</p>
+          <p>A recorded clip of the animations on lichess.org will land here.
+          Until then: it installs in one click — see the real thing.</p>
+        </div>
+      </div>
+      <p class="pages-line" style="margin-top:1rem;">works on: live games · analysis board · lichess TV · puzzles</p>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <div class="links">
+      <a href="https://github.com/gapsong/lichess-kill-anim">Source on GitHub</a>
+      <a href="https://gist.githubusercontent.com/gapsong/8b78fdf058b436e5b439b86ef2a816b4/raw/lichess-kill-notifier.user.js">Raw userscript</a>
+      <a href="https://gapsong.github.io/">More projects → gapsong.github.io</a>
+    </div>
+    <p><strong>Unofficial.</strong> An independent add-on — not affiliated with, endorsed by, or
+    connected to Lichess. It only overlays visual effects and does not change gameplay.</p>
+    <p>MIT licensed.</p>
+  </div>
+</footer>
+
+<script>
+(function () {
+  var canvas = document.getElementById('fx');
+  var ctx = canvas.getContext('2d');
+  var reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var dpr = Math.min(window.devicePixelRatio || 1, 2);
+  var W = 0, H = 0, SQ = 0;
+
+  function resize() {
+    var r = canvas.parentElement.getBoundingClientRect();
+    W = r.width; H = r.height;
+    canvas.width = W * dpr; canvas.height = H * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    SQ = Math.max(56, Math.ceil(W / 12));
+    drawBoard();
+  }
+
+  function drawBoard() {
+    ctx.clearRect(0, 0, W, H);
+    for (var y = 0; y < Math.ceil(H / SQ); y++) {
+      for (var x = 0; x < Math.ceil(W / SQ); x++) {
+        ctx.fillStyle = (x + y) % 2 ? '#171a15' : '#131512';
+        ctx.fillRect(x * SQ, y * SQ, SQ, SQ);
+      }
+    }
+    // fade the board toward the text side so the copy stays readable
+    var g = ctx.createLinearGradient(0, 0, W, 0);
+    g.addColorStop(0, 'rgba(19,21,18,0.92)');
+    g.addColorStop(0.55, 'rgba(19,21,18,0.55)');
+    g.addColorStop(1, 'rgba(19,21,18,0.15)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, W, H);
+  }
+
+  resize();
+  window.addEventListener('resize', resize);
+  if (reduced) return; // static board only
+
+  var COLORS = ['#b073f0', '#7fb069', '#e06c5a', '#e9e7df'];
+  var parts = [], rings = [], running = false;
+
+  function burst() {
+    if (document.hidden) return;
+    // bias bursts to the right, emptier half of the hero
+    var cx = W * (0.45 + Math.random() * 0.5);
+    var cy = H * (0.15 + Math.random() * 0.7);
+    cx = (Math.floor(cx / SQ) + 0.5) * SQ;
+    cy = (Math.floor(cy / SQ) + 0.5) * SQ;
+    var color = COLORS[Math.floor(Math.random() * COLORS.length)];
+    for (var i = 0; i < 26; i++) {
+      var a = Math.random() * Math.PI * 2;
+      var v = 40 + Math.random() * 150;
+      parts.push({ x: cx, y: cy, vx: Math.cos(a) * v, vy: Math.sin(a) * v,
+                   life: 1, decay: 0.9 + Math.random() * 1.1,
+                   size: 1.5 + Math.random() * 2.5, color: color });
+    }
+    rings.push({ x: cx, y: cy, r: 4, life: 1, color: color });
+    if (!running) { running = true; last = performance.now(); requestAnimationFrame(tick); }
+  }
+
+  var last = 0;
+  function tick(now) {
+    var dt = Math.min((now - last) / 1000, 0.05);
+    last = now;
+    drawBoard();
+    for (var i = parts.length - 1; i >= 0; i--) {
+      var p = parts[i];
+      p.life -= p.decay * dt;
+      if (p.life <= 0) { parts.splice(i, 1); continue; }
+      p.x += p.vx * dt; p.y += p.vy * dt;
+      p.vx *= 0.96; p.vy *= 0.96; p.vy += 30 * dt;
+      ctx.globalAlpha = Math.max(p.life, 0) * 0.85;
+      ctx.fillStyle = p.color;
+      ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
+    }
+    for (var j = rings.length - 1; j >= 0; j--) {
+      var q = rings[j];
+      q.life -= 1.6 * dt;
+      if (q.life <= 0) { rings.splice(j, 1); continue; }
+      q.r += 140 * dt;
+      ctx.globalAlpha = Math.max(q.life, 0) * 0.5;
+      ctx.strokeStyle = q.color;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(q.x, q.y, q.r, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+    if (parts.length || rings.length) requestAnimationFrame(tick);
+    else running = false;
+  }
+
+  setTimeout(burst, 700);
+  setInterval(burst, 2600);
+})();
+</script>
+</body>
+</html>
