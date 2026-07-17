@@ -15,3 +15,4 @@ lab/node_modules/
 lab/archive/
 lab/results/
 scripts/animations/.backup/
+scripts/debug/bake-gallery-webp/.tmp/
