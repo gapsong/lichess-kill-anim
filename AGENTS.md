@@ -52,15 +52,21 @@ Der Banner in `scripts/build-userscript.mjs` setzt `@downloadURL` und `@updateUR
 
 Ohne Schritt 1 (Version-Bump) erkennt Tampermonkey kein Update, selbst wenn der Gist-Inhalt sich geaendert hat.
 
-## GitHub Pages Landing Page (`docs/`)
+## GitHub Pages = Live-Gallery (`docs/`)
 
-`docs/index.html` ist die oeffentliche Install-/Landing-Page (GitHub Pages serviert `/docs`
-auf `main`). Sie ist self-contained (inline CSS + kleines Canvas-Script, kein Build-Step,
-light/dark via `prefers-color-scheme`). Der Install-Button zeigt auf die kanonische
-Gist-Raw-URL oben — NICHT auf die Repo-Raw-URL, denn nur der Gist traegt den
-`@downloadURL`/`@updateURL`-Banner-Vertrag fuer Auto-Updates. Der Demo-Slot ist ein
-Platzhalter; ein echter Capture-Clip/GIF fehlt noch. Interne Prozess-Docs (Gameplans,
-TDD-Plaene, superpowers-Specs) liegen bewusst in `docs/dev/`, nicht im Pages-Root.
+Die oeffentliche Pages-Site (`/docs` auf `main`) ist die GEBAUTE Gallery — Live-Canvas-
+Animationen in voller Qualitaet plus Install-Sektion, kein separates Landing-Page-Artefakt.
+`docs/index.html` + `docs/gallery.js` sind Build-Output; nicht von Hand editieren, sondern
+Aenderungen in `gallery/` machen und neu deployen:
+
+```bash
+npm run build:pages   # build:gallery + kopiert dist/gallery/* -> docs/
+```
+
+Der Install-Link in der Gallery zeigt auf die kanonische Gist-Raw-URL oben — NICHT auf die
+Repo-Raw-URL, denn nur der Gist traegt den `@downloadURL`/`@updateURL`-Banner-Vertrag fuer
+Auto-Updates. Interne Prozess-Docs (Gameplans, TDD-Plaene, superpowers-Specs) liegen in
+`docs/dev/` und werden vom Copy nicht angefasst.
 
 ## Wichtige Module
 

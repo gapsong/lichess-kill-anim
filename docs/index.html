@@ -3,511 +3,229 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Lichess Kill Animations — particle effects for every capture</title>
-<meta name="description" content="A Tampermonkey userscript for lichess.org: signature kill animations on every capture, plus animated tactical pattern hints. Unofficial, open source, MIT.">
+<title>Lichess Kill Animations</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='0.9em' font-size='90'%3E%E2%99%9E%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
   :root {
-    --bg: #f4f3ee;
-    --surface: #fdfcf9;
-    --ink: #23251f;
-    --muted: #6b6e63;
-    --line: #ddddd2;
-    --accent: #7a3fc4;
-    --accent-ink: #fdfcf9;
-    --good: #4a7a3d;
-    --bad: #b5482f;
-    --board-a: #22261f;
-    --board-b: #2d3328;
-    --hero-ink: #e9e7df;
-    --hero-muted: #9a9d92;
-    --mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
-    --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --bg: #efe9dc;          /* warm parchment */
+    --surface: #f8f4ea;     /* card */
+    --line: #ddd2bd;        /* warm border */
+    --line-soft: rgba(58,50,42,0.08);
+    --txt: #3a322a;         /* espresso */
+    --muted: #8a7c66;
+    --accent: #8a5a36;      /* walnut */
+    --accent-soft: #a8703f;
+    color-scheme: light;
   }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #131512;
-      --surface: #1b1e19;
-      --ink: #e9e7df;
-      --muted: #9a9d92;
-      --line: #2c302a;
-      --accent: #b073f0;
-      --accent-ink: #16101f;
-      --good: #7fb069;
-      --bad: #e06c5a;
-    }
-  }
-
   * { box-sizing: border-box; }
   html { scroll-behavior: smooth; }
   body {
     margin: 0;
     background: var(--bg);
-    color: var(--ink);
-    font-family: var(--sans);
-    line-height: 1.6;
-    font-size: 16px;
-  }
-  a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 3px; }
-  a:focus-visible, button:focus-visible, .btn:focus-visible {
-    outline: 2px solid var(--accent);
-    outline-offset: 3px;
+    color: var(--txt);
+    font-family: 'Space Grotesk', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
   }
 
-  .wrap { max-width: 62rem; margin: 0 auto; padding: 0 1.25rem; }
+  /* ---- sticky top bar ---- */
+  .topbar {
+    position: sticky; top: 0; z-index: 10;
+    background: rgba(239,233,220,0.82);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--line);
+  }
+  .topbar-inner {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 20px; flex-wrap: wrap;
+    padding: 18px 32px;
+    max-width: 1140px; margin: 0 auto;
+  }
+  .brand { display: flex; align-items: center; gap: 14px; }
+  .mark {
+    width: 34px; height: 34px; border-radius: 50%; flex: none;
+    border: 3px solid var(--accent);
+    box-shadow: inset 0 0 0 2px rgba(248,244,234,0.6);
+  }
+  h1 { margin: 0; font-size: 20px; font-weight: 600; letter-spacing: -0.01em; }
+  h1 .accent { color: var(--accent); }
+  .tagline { margin: 1px 0 0; font-size: 12.5px; color: var(--muted); }
 
-  /* ---------- hero: committed to the dark board world in both themes ---------- */
-  .hero {
-    position: relative;
-    background: #131512;
-    color: var(--hero-ink);
-    overflow: hidden;
-    border-bottom: 1px solid #2c302a;
+  .status {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-size: 12.5px; color: var(--muted);
+    padding: 7px 13px; border: 1px solid var(--line); border-radius: 999px;
+    background: rgba(248,244,234,0.7);
   }
-  .hero canvas {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    display: block;
-  }
-  .hero .wrap {
-    position: relative;
-    padding-top: 5.5rem;
-    padding-bottom: 5.5rem;
-    display: grid;
-    grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
-    gap: 3rem;
-    align-items: center;
-  }
-  .hero-demo { justify-self: end; }
-  .hero-demo img {
-    display: block;
-    width: 100%;
-    max-width: 360px;
-    height: auto;
-    border-radius: 4px;
-    box-shadow: 0 0 0 1px #3a3f37, 0 12px 40px rgba(0,0,0,.5);
-  }
-  .hero-demo figcaption {
-    font-family: var(--mono);
-    font-size: 0.75rem;
-    color: var(--hero-muted);
-    margin-top: 0.6rem;
-    text-align: right;
-  }
-  .eyebrow {
-    font-family: var(--mono);
-    font-size: 0.85rem;
-    letter-spacing: 0.08em;
-    color: #b073f0;
-    margin: 0 0 1rem;
-  }
-  .eyebrow .check { color: #7fb069; }
-  h1 {
-    font-size: clamp(2.1rem, 5.5vw, 3.6rem);
-    line-height: 1.05;
-    letter-spacing: -0.02em;
-    font-weight: 800;
-    margin: 0 0 1rem;
-    max-width: 15ch;
-    text-wrap: balance;
-  }
-  .hero p.lead {
-    max-width: 46ch;
-    color: var(--hero-muted);
-    font-size: 1.06rem;
-    margin: 0 0 2rem;
-  }
-  .hero .lead strong { color: var(--hero-ink); font-weight: 600; }
+  .status.ok { color: var(--accent); border-color: var(--accent-soft); }
+  .status .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; flex: none; }
+  .status a { color: var(--accent); font-weight: 500; text-decoration: underline; text-underline-offset: 2px; }
 
-  .cta-row { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center; }
-  .btn {
-    display: inline-block;
-    font-weight: 700;
-    text-decoration: none;
-    padding: 0.85rem 1.5rem;
-    border-radius: 4px;
-    font-size: 1rem;
-  }
-  .btn-install {
-    background: #b073f0;
-    color: #16101f;
-    box-shadow: 0 0 0 1px rgba(176,115,240,.4), 0 4px 24px rgba(176,115,240,.25);
-  }
-  .btn-install:hover { background: #c08ff5; }
-  .btn-ghost {
-    color: var(--hero-ink);
-    box-shadow: inset 0 0 0 1px #3a3f37;
-  }
-  .btn-ghost:hover { box-shadow: inset 0 0 0 1px #5a6055; }
-  .cta-note {
-    font-family: var(--mono);
-    font-size: 0.78rem;
-    color: var(--hero-muted);
-    margin: 1rem 0 0;
-  }
+  /* ---- hero (understated) ---- */
+  .hero { max-width: 1140px; margin: 0 auto; padding: 40px 32px 0; }
+  .hero h2 { margin: 0; font-size: 25px; font-weight: 600; letter-spacing: -0.01em; }
+  .hero p { margin: 9px 0 0; max-width: 56ch; color: var(--muted); font-size: 14.5px; line-height: 1.55; }
 
-  /* ---------- sections ---------- */
-  section { padding: 3.5rem 0; }
-  section + section { border-top: 1px solid var(--line); }
-  .kicker {
-    font-family: var(--mono);
-    font-size: 0.8rem;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: var(--accent);
-    margin: 0 0 0.5rem;
+  /* ---- sections ---- */
+  main { max-width: 1140px; margin: 0 auto; padding: 0 32px 24px; }
+  .section-title {
+    display: flex; align-items: center; gap: 16px;
+    font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.16em;
+    color: var(--muted); margin: 38px 2px 8px;
   }
-  h2 {
-    font-size: 1.6rem;
-    letter-spacing: -0.01em;
-    margin: 0 0 1.5rem;
-    text-wrap: balance;
-  }
-  p { max-width: 62ch; }
-  .muted { color: var(--muted); }
+  .section-title::after { content: ''; flex: 1; height: 1px; background: var(--line); }
+  .section-desc { margin: 0 2px 18px; max-width: 64ch; color: var(--muted); font-size: 13.5px; line-height: 1.5; }
 
-  /* install steps — a real sequence */
-  .steps { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 1rem; margin: 0; padding: 0; list-style: none; }
-  .steps li {
-    background: var(--surface);
-    border: 1px solid var(--line);
-    border-radius: 4px;
-    padding: 1.25rem;
-    min-width: 0;
-  }
-  .steps .n {
-    font-family: var(--mono);
-    color: var(--accent);
-    font-size: 0.85rem;
-    display: block;
-    margin-bottom: 0.5rem;
-  }
-  .steps h3 { margin: 0 0 0.4rem; font-size: 1.02rem; }
-  .steps p { margin: 0; font-size: 0.92rem; color: var(--muted); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(196px, 1fr)); gap: 16px; }
 
-  /* what it does */
-  .cols { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 1rem; }
+  /* ---- card ---- */
   .card {
+    position: relative;
     background: var(--surface);
     border: 1px solid var(--line);
-    border-radius: 4px;
-    padding: 1.5rem;
-    min-width: 0;
+    border-radius: 13px;
+    padding: 12px;
+    display: flex; flex-direction: column; gap: 11px;
+    box-shadow: 0 1px 2px rgba(58,50,42,0.05);
+    transition: transform .16s ease, border-color .16s ease, box-shadow .16s ease;
   }
-  .card h3 { margin: 0 0 0.75rem; font-size: 1.15rem; }
-  .card > p { font-size: 0.95rem; color: var(--muted); }
-
-  .fx-table { width: 100%; border-collapse: collapse; font-size: 0.95rem; }
-  .fx-table td { padding: 0.45rem 0.5rem 0.45rem 0; border-bottom: 1px solid var(--line); }
-  .fx-table tr:last-child td { border-bottom: 0; }
-  .fx-table .glyph { font-size: 1.35rem; line-height: 1; width: 2rem; }
-  .fx-table .fx {
-    font-family: var(--mono);
-    color: var(--accent);
-    text-align: right;
-    white-space: nowrap;
+  .card:hover {
+    transform: translateY(-2px);
+    border-color: var(--accent-soft);
+    box-shadow: 0 8px 20px -12px rgba(58,50,42,0.4);
   }
-
-  .chips { display: flex; flex-wrap: wrap; gap: 0.4rem; padding: 0; margin: 0 0 1rem; list-style: none; }
-  .chips li {
-    font-family: var(--mono);
-    font-size: 0.8rem;
-    padding: 0.25rem 0.6rem;
-    border: 1px solid var(--line);
-    border-radius: 999px;
-    color: var(--muted);
+  .card.active {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px var(--accent), 0 8px 20px -12px rgba(58,50,42,0.4);
   }
-  .legend { font-size: 0.88rem; margin-bottom: 1rem; }
-  .dot { display: inline-block; width: 0.6em; height: 0.6em; border-radius: 50%; margin-right: 0.3em; }
-  .dot.good { background: var(--good); }
-  .dot.bad { background: var(--bad); }
-
-  .fairplay {
-    border-left: 3px solid var(--accent);
-    padding: 0.6rem 1rem;
-    font-size: 0.88rem;
-    color: var(--muted);
-    margin: 0;
+  .card canvas {
+    width: 100%; aspect-ratio: 1 / 1; display: block;
+    border-radius: 9px; background: #d9c4a0;
+    box-shadow: inset 0 0 0 1px var(--line-soft);
   }
 
-  /* demo GIFs */
-  .demo-row {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 1rem;
-    max-width: 42rem;
+  .meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .meta .name { font-weight: 600; font-size: 14px; }
+  .meta button {
+    font-family: inherit; font-size: 12.5px; font-weight: 600;
+    color: #f8f4ea; background: var(--accent);
+    border: 0; border-radius: 999px; padding: 6px 15px; cursor: pointer;
+    transition: filter .14s ease, transform .08s ease, opacity .14s ease, background .14s ease, color .14s ease;
   }
-  .demo-row figure {
-    margin: 0;
-    background: var(--surface);
-    border: 1px solid var(--line);
-    border-radius: 4px;
-    padding: 0.75rem;
-    min-width: 0;
-  }
-  .demo-row img {
-    display: block;
-    width: 100%;
-    height: auto;
-    border-radius: 2px;
-  }
-  .demo-row figcaption {
-    font-family: var(--mono);
-    font-size: 0.75rem;
-    color: var(--muted);
-    margin-top: 0.6rem;
-  }
-
-  .pages-line {
-    font-family: var(--mono);
-    font-size: 0.85rem;
-    color: var(--muted);
-  }
+  .meta button:hover:not(:disabled) { filter: brightness(1.06); transform: translateY(-1px); }
+  .meta button:active:not(:disabled) { transform: translateY(0) scale(0.96); }
+  .card.active .meta button { background: transparent; color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent-soft); }
+  .meta button:disabled { opacity: 0.4; cursor: default; }
 
   footer {
-    border-top: 1px solid var(--line);
-    padding: 2.5rem 0 3rem;
-    font-size: 0.88rem;
-    color: var(--muted);
+    max-width: 1140px; margin: 24px auto 0; padding: 24px 32px 52px;
+    color: var(--muted); font-size: 12.5px; border-top: 1px solid var(--line);
   }
-  footer .links { display: flex; flex-wrap: wrap; gap: 1.25rem; margin-bottom: 1rem; }
-  footer p { margin: 0.25rem 0; max-width: none; }
 
-  @media (max-width: 720px) {
-    .steps, .cols { grid-template-columns: 1fr; }
-    .hero .wrap { padding-top: 4rem; padding-bottom: 4rem; grid-template-columns: 1fr; gap: 2.5rem; }
-    .hero-demo { justify-self: start; }
-    .hero-demo figcaption { text-align: left; }
-    .demo-row { grid-template-columns: 1fr; }
-  }
-  @media (prefers-reduced-motion: reduce) {
-    html { scroll-behavior: auto; }
-  }
+  /* ---- install block ---- */
+  .install { max-width: 1140px; margin: 0 auto; padding: 34px 32px 4px; }
+  .install > h2 { margin: 0; font-size: 22px; font-weight: 600; letter-spacing: -0.01em; }
+  .install > p { margin: 8px 0 22px; max-width: 60ch; color: var(--muted); font-size: 14.5px; line-height: 1.55; }
+  .steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+  .step { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 15px; align-items: start;
+          background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; min-width: 0; }
+  .step-n { width: 30px; height: 30px; border-radius: 8px; background: var(--bg); border: 1px solid var(--line);
+            color: var(--accent); font-weight: 600; font-size: 14px; display: grid; place-items: center; flex: none; }
+  .step h3 { margin: 1px 0 5px; font-size: 15.5px; font-weight: 600; letter-spacing: -0.01em; }
+  .step p { margin: 0 0 13px; color: var(--muted); font-size: 13.5px; line-height: 1.5; }
+  .step p:last-child { margin-bottom: 0; }
+  .ibtn { display: inline-flex; align-items: center; gap: 6px; font-family: inherit; font-size: 13.5px; font-weight: 500;
+          padding: 9px 15px; border-radius: 9px; text-decoration: none; cursor: pointer; border: 1px solid transparent;
+          transition: background .18s, border-color .18s, color .18s; }
+  .ibtn.primary { background: var(--accent); color: #f8f4ea; border-color: var(--accent); }
+  .ibtn.primary:hover { background: var(--accent-soft); }
+  .ibtn.ghost { background: transparent; color: var(--txt); border-color: var(--line); }
+  .ibtn.ghost:hover { border-color: var(--accent-soft); color: var(--accent); }
+  .ibtn:focus-visible { outline: 2px solid var(--accent-soft); outline-offset: 2px; }
+  .urlhint { display: flex; align-items: center; gap: 8px; margin-top: 11px; min-width: 0; }
+  .urlhint code { flex: 1 1 auto; min-width: 0; font-size: 11px; color: var(--muted); background: var(--bg);
+                  border: 1px solid var(--line); border-radius: 6px; padding: 5px 9px;
+                  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .urlhint .copy { flex: none; font-family: inherit; font-size: 11px; color: var(--accent); background: none;
+                   border: 1px solid var(--line); border-radius: 6px; padding: 5px 10px; cursor: pointer; }
+  .urlhint .copy:hover { border-color: var(--accent-soft); }
+  .install-note { margin: 16px 0 0; color: var(--muted); font-size: 12.5px; line-height: 1.5; }
+  .install-note b { color: var(--txt); font-weight: 600; }
+  @media (max-width: 860px) { .steps { grid-template-columns: 1fr; } }
 </style>
 </head>
 <body>
-
-<header class="hero">
-  <canvas id="fx" aria-hidden="true"></canvas>
-  <div class="wrap">
-    <div class="hero-copy">
-    <p class="eyebrow">24. Qxf7#<span class="check"> ✓ capture</span></p>
-    <h1>Every capture deserves a kill animation.</h1>
-    <p class="lead">
-      A free userscript for <strong>lichess.org</strong>: signature particle effects on every
-      capture — nukes, slashes, zaps, a touch of board shake — plus animated hints for tactical
-      patterns. Rendered on its own overlay canvas; the site itself is never touched.
-    </p>
-    <div class="cta-row">
-      <a class="btn btn-install" href="https://gist.githubusercontent.com/gapsong/8b78fdf058b436e5b439b86ef2a816b4/raw/lichess-kill-notifier.user.js">Install the userscript</a>
-      <a class="btn btn-ghost" href="https://github.com/gapsong/lichess-kill-anim">View on GitHub</a>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="brand">
+        <div class="mark" aria-hidden="true"></div>
+        <div>
+          <h1>Lichess Kill <span class="accent">Animations</span></h1>
+          <p class="tagline">Capture animations for lichess.org</p>
+        </div>
+      </div>
+      <div id="status" class="status"></div>
     </div>
-    <p class="cta-note">requires Tampermonkey · auto-updates · open source (MIT)</p>
-    </div>
-    <figure class="hero-demo">
-      <img src="signature.gif" width="360" height="360"
-           alt="Looping animation of the Signature pack: five captures on a chessboard, each piece firing its own particle effect">
-      <figcaption>Signature pack — all five pieces, one loop</figcaption>
-    </figure>
-  </div>
-</header>
+  </header>
 
-<main>
-  <section id="install">
-    <div class="wrap">
-      <p class="kicker">How to install</p>
-      <h2>Three moves, no build step.</h2>
-      <ol class="steps">
-        <li>
-          <span class="n">1.</span>
+  <section class="install">
+    <h2>Add it to your board in a minute</h2>
+    <p>A small userscript that draws capture animations and live tactical hints, right on lichess.org.</p>
+    <ol class="steps">
+      <li class="step">
+        <span class="step-n">1</span>
+        <div>
           <h3>Install Tampermonkey</h3>
-          <p>Get the <a href="https://www.tampermonkey.net/">Tampermonkey extension</a> for Chrome, Firefox, Edge or Safari.</p>
-        </li>
-        <li>
-          <span class="n">2.</span>
-          <h3>Click Install</h3>
-          <p>The button above opens the script in Tampermonkey — confirm the install. Updates arrive automatically from then on.</p>
-        </li>
-        <li>
-          <span class="n">3.</span>
-          <h3>Open lichess.org</h3>
-          <p>Play, watch TV or solve puzzles. The first capture speaks for itself.</p>
-        </li>
-      </ol>
-    </div>
-  </section>
-
-  <section id="what">
-    <div class="wrap">
-      <p class="kicker">What it does</p>
-      <h2>Signature effects per piece, hints per position.</h2>
-      <div class="cols">
-        <div class="card">
-          <h3>Kill animations</h3>
-          <p>Each attacking piece has its own effect, and every effect scales with the value of the
-          piece it removes — taking a queen is the crescendo, not just another capture. Optional
-          synth sound and a Vlambeer-style board shake on queen captures.</p>
-          <table class="fx-table">
-            <tbody>
-              <tr><td class="glyph">♛</td><td>Queen</td><td class="fx">nuke</td></tr>
-              <tr><td class="glyph">♜</td><td>Rook</td><td class="fx">smash</td></tr>
-              <tr><td class="glyph">♞</td><td>Knight</td><td class="fx">slash</td></tr>
-              <tr><td class="glyph">♝</td><td>Bishop</td><td class="fx">zap</td></tr>
-              <tr><td class="glyph">♟</td><td>Pawn</td><td class="fx">pixel</td></tr>
-              <tr><td class="glyph">♚</td><td>King falls</td><td class="fx">ascension</td></tr>
-            </tbody>
-          </table>
+          <p>The free browser extension that runs userscripts.</p>
+          <a class="ibtn ghost" href="https://www.tampermonkey.net/" target="_blank" rel="noopener">Get Tampermonkey →</a>
         </div>
-        <div class="card">
-          <h3>Pattern hints</h3>
-          <p>The position is analysed live with chess.js — no engine — and matching formations
-          light up right on the board, then settle into a faint reminder while they last.</p>
-          <p class="legend"><span class="dot good"></span>your side&nbsp;&nbsp;<span class="dot bad"></span>opponent</p>
-          <ul class="chips">
-            <li>pin</li><li>skewer</li><li>fork</li><li>battery</li><li>hotspot</li>
-            <li>hanging piece</li><li>outpost</li><li>fianchetto</li><li>passed pawn</li>
-            <li>open file</li><li>pawn chain</li><li>king fortress</li><li>connected rooks</li>
-          </ul>
-          <p class="fairplay">Pattern hints are a study aid — use them on analysis boards, puzzles
-          and game review, not to gain an edge in rated games.</p>
+      </li>
+      <li class="step">
+        <span class="step-n">2</span>
+        <div>
+          <h3>Install the script</h3>
+          <p>One click — Tampermonkey shows its install page.</p>
+          <a class="ibtn primary" href="https://gist.githubusercontent.com/gapsong/8b78fdf058b436e5b439b86ef2a816b4/raw/lichess-kill-notifier.user.js">Install the script</a>
+          <div class="urlhint">
+            <code>gist.githubusercontent.com/…/lichess-kill-notifier.user.js</code>
+            <button class="copy" type="button" data-url="https://gist.githubusercontent.com/gapsong/8b78fdf058b436e5b439b86ef2a816b4/raw/lichess-kill-notifier.user.js">Copy</button>
+          </div>
         </div>
-      </div>
-    </div>
+      </li>
+      <li class="step">
+        <span class="step-n">3</span>
+        <div>
+          <h3>Open Lichess &amp; play</h3>
+          <p>Captures animate and tactical hints appear. Pick a style below.</p>
+        </div>
+      </li>
+    </ol>
+    <p class="install-note"><b>Auto-updates</b> via Tampermonkey · works in live games, analysis, TV &amp; puzzles · only draws on top of the page, nothing else.</p>
   </section>
 
-  <section id="demo">
-    <div class="wrap">
-      <p class="kicker">Demo</p>
-      <h2>See it on a real board.</h2>
-      <p class="muted" style="margin:-0.75rem 0 1.25rem;">Recorded straight from the engine — the same
-      renderer that draws on your board. Above in the hero: the full Signature cycle. Two more looks:</p>
-      <div class="demo-row">
-        <figure>
-          <img src="fire.gif" width="320" height="320" loading="lazy"
-               alt="Fire theme: a queen captures a rook and an inferno effect burns across the square">
-          <figcaption>Fire theme — queen takes, inferno</figcaption>
-        </figure>
-        <figure>
-          <img src="vortex.gif" width="320" height="320" loading="lazy"
-               alt="Vortex effect: a rook captures a knight and a swirling vortex swallows the square">
-          <figcaption>Vortex effect — rook takes, vortex</figcaption>
-        </figure>
-      </div>
-      <p class="pages-line" style="margin-top:1rem;">works on: live games · analysis board · lichess TV · puzzles</p>
-    </div>
+  <section class="hero">
+    <h2>Pick your capture style.</h2>
+    <p>Every preview is a real capture, rendered live by the same engine that runs on your board. Click one — it applies instantly.</p>
   </section>
-</main>
 
-<footer>
-  <div class="wrap">
-    <div class="links">
-      <a href="https://github.com/gapsong/lichess-kill-anim">Source on GitHub</a>
-      <a href="https://gist.githubusercontent.com/gapsong/8b78fdf058b436e5b439b86ef2a816b4/raw/lichess-kill-notifier.user.js">Raw userscript</a>
-      <a href="https://gapsong.github.io/">More projects → gapsong.github.io</a>
-    </div>
-    <p><strong>Unofficial.</strong> An independent add-on — not affiliated with, endorsed by, or
-    connected to Lichess. It only overlays visual effects and does not change gameplay.</p>
-    <p>MIT licensed.</p>
-  </div>
-</footer>
+  <main id="content"></main>
 
-<script>
-(function () {
-  var canvas = document.getElementById('fx');
-  var ctx = canvas.getContext('2d');
-  var reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  var dpr = Math.min(window.devicePixelRatio || 1, 2);
-  var W = 0, H = 0, SQ = 0;
+  <footer>
+    <strong>Unofficial add-on.</strong> Not affiliated with, endorsed by, or connected to Lichess — it only adds visual effects on top of the site. Lichess® is a trademark of its respective owners.<br>
+    Runs only on lichess.org · settings stored locally in your browser · no tracking.
+  </footer>
 
-  function resize() {
-    var r = canvas.parentElement.getBoundingClientRect();
-    W = r.width; H = r.height;
-    canvas.width = W * dpr; canvas.height = H * dpr;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    SQ = Math.max(56, Math.ceil(W / 12));
-    drawBoard();
-  }
-
-  function drawBoard() {
-    ctx.clearRect(0, 0, W, H);
-    for (var y = 0; y < Math.ceil(H / SQ); y++) {
-      for (var x = 0; x < Math.ceil(W / SQ); x++) {
-        ctx.fillStyle = (x + y) % 2 ? '#171a15' : '#131512';
-        ctx.fillRect(x * SQ, y * SQ, SQ, SQ);
-      }
-    }
-    // fade the board toward the text side so the copy stays readable
-    var g = ctx.createLinearGradient(0, 0, W, 0);
-    g.addColorStop(0, 'rgba(19,21,18,0.92)');
-    g.addColorStop(0.55, 'rgba(19,21,18,0.55)');
-    g.addColorStop(1, 'rgba(19,21,18,0.15)');
-    ctx.fillStyle = g;
-    ctx.fillRect(0, 0, W, H);
-  }
-
-  resize();
-  window.addEventListener('resize', resize);
-  if (reduced) return; // static board only
-
-  var COLORS = ['#b073f0', '#7fb069', '#e06c5a', '#e9e7df'];
-  var parts = [], rings = [], running = false;
-
-  function burst() {
-    if (document.hidden) return;
-    // bias bursts to the right, emptier half of the hero
-    var cx = W * (0.45 + Math.random() * 0.5);
-    var cy = H * (0.15 + Math.random() * 0.7);
-    cx = (Math.floor(cx / SQ) + 0.5) * SQ;
-    cy = (Math.floor(cy / SQ) + 0.5) * SQ;
-    var color = COLORS[Math.floor(Math.random() * COLORS.length)];
-    for (var i = 0; i < 26; i++) {
-      var a = Math.random() * Math.PI * 2;
-      var v = 40 + Math.random() * 150;
-      parts.push({ x: cx, y: cy, vx: Math.cos(a) * v, vy: Math.sin(a) * v,
-                   life: 1, decay: 0.9 + Math.random() * 1.1,
-                   size: 1.5 + Math.random() * 2.5, color: color });
-    }
-    rings.push({ x: cx, y: cy, r: 4, life: 1, color: color });
-    if (!running) { running = true; last = performance.now(); requestAnimationFrame(tick); }
-  }
-
-  var last = 0;
-  function tick(now) {
-    var dt = Math.min((now - last) / 1000, 0.05);
-    last = now;
-    drawBoard();
-    for (var i = parts.length - 1; i >= 0; i--) {
-      var p = parts[i];
-      p.life -= p.decay * dt;
-      if (p.life <= 0) { parts.splice(i, 1); continue; }
-      p.x += p.vx * dt; p.y += p.vy * dt;
-      p.vx *= 0.96; p.vy *= 0.96; p.vy += 30 * dt;
-      ctx.globalAlpha = Math.max(p.life, 0) * 0.85;
-      ctx.fillStyle = p.color;
-      ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
-    }
-    for (var j = rings.length - 1; j >= 0; j--) {
-      var q = rings[j];
-      q.life -= 1.6 * dt;
-      if (q.life <= 0) { rings.splice(j, 1); continue; }
-      q.r += 140 * dt;
-      ctx.globalAlpha = Math.max(q.life, 0) * 0.5;
-      ctx.strokeStyle = q.color;
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.arc(q.x, q.y, q.r, 0, Math.PI * 2);
-      ctx.stroke();
-    }
-    ctx.globalAlpha = 1;
-    if (parts.length || rings.length) requestAnimationFrame(tick);
-    else running = false;
-  }
-
-  setTimeout(burst, 700);
-  setInterval(burst, 2600);
-})();
-</script>
+  <script src="gallery.js"></script>
+  <script>
+    document.querySelectorAll('.urlhint .copy').forEach(function (b) {
+      b.addEventListener('click', function () {
+        if (navigator.clipboard) navigator.clipboard.writeText(b.dataset.url);
+        var t = b.textContent; b.textContent = 'Copied'; setTimeout(function () { b.textContent = t; }, 1200);
+      });
+    });
+  </script>
 </body>
 </html>
