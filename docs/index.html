@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Lichess Kill Animations — particle effects for every capture</title>
 <meta name="description" content="A Tampermonkey userscript for lichess.org: signature kill animations on every capture, plus animated tactical pattern hints. Unofficial, open source, MIT.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='0.9em' font-size='90'%3E%E2%99%9E%3C/text%3E%3C/svg%3E">
 <style>
   :root {
     --bg: #f4f3ee;
@@ -74,6 +75,26 @@
     position: relative;
     padding-top: 5.5rem;
     padding-bottom: 5.5rem;
+    display: grid;
+    grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+    gap: 3rem;
+    align-items: center;
+  }
+  .hero-demo { justify-self: end; }
+  .hero-demo img {
+    display: block;
+    width: 100%;
+    max-width: 360px;
+    height: auto;
+    border-radius: 4px;
+    box-shadow: 0 0 0 1px #3a3f37, 0 12px 40px rgba(0,0,0,.5);
+  }
+  .hero-demo figcaption {
+    font-family: var(--mono);
+    font-size: 0.75rem;
+    color: var(--hero-muted);
+    margin-top: 0.6rem;
+    text-align: right;
   }
   .eyebrow {
     font-family: var(--mono);
@@ -211,19 +232,33 @@
     margin: 0;
   }
 
-  /* demo slot */
-  .demo-slot {
-    border: 1px dashed var(--line);
-    border-radius: 4px;
-    background: var(--surface);
-    aspect-ratio: 16 / 9;
+  /* demo GIFs */
+  .demo-row {
     display: grid;
-    place-items: center;
-    text-align: center;
-    padding: 1.5rem;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1rem;
+    max-width: 42rem;
   }
-  .demo-slot .san { font-family: var(--mono); color: var(--accent); font-size: 0.85rem; margin: 0 0 0.5rem; }
-  .demo-slot p { margin: 0; color: var(--muted); font-size: 0.95rem; max-width: 38ch; }
+  .demo-row figure {
+    margin: 0;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 0.75rem;
+    min-width: 0;
+  }
+  .demo-row img {
+    display: block;
+    width: 100%;
+    height: auto;
+    border-radius: 2px;
+  }
+  .demo-row figcaption {
+    font-family: var(--mono);
+    font-size: 0.75rem;
+    color: var(--muted);
+    margin-top: 0.6rem;
+  }
 
   .pages-line {
     font-family: var(--mono);
@@ -242,7 +277,10 @@
 
   @media (max-width: 720px) {
     .steps, .cols { grid-template-columns: 1fr; }
-    .hero .wrap { padding-top: 4rem; padding-bottom: 4rem; }
+    .hero .wrap { padding-top: 4rem; padding-bottom: 4rem; grid-template-columns: 1fr; gap: 2.5rem; }
+    .hero-demo { justify-self: start; }
+    .hero-demo figcaption { text-align: left; }
+    .demo-row { grid-template-columns: 1fr; }
   }
   @media (prefers-reduced-motion: reduce) {
     html { scroll-behavior: auto; }
@@ -254,6 +292,7 @@
 <header class="hero">
   <canvas id="fx" aria-hidden="true"></canvas>
   <div class="wrap">
+    <div class="hero-copy">
     <p class="eyebrow">24. Qxf7#<span class="check"> ✓ capture</span></p>
     <h1>Every capture deserves a kill animation.</h1>
     <p class="lead">
@@ -266,6 +305,12 @@
       <a class="btn btn-ghost" href="https://github.com/gapsong/lichess-kill-anim">View on GitHub</a>
     </div>
     <p class="cta-note">requires Tampermonkey · auto-updates · open source (MIT)</p>
+    </div>
+    <figure class="hero-demo">
+      <img src="signature.gif" width="360" height="360"
+           alt="Looping animation of the Signature pack: five captures on a chessboard, each piece firing its own particle effect">
+      <figcaption>Signature pack — all five pieces, one loop</figcaption>
+    </figure>
   </div>
 </header>
 
@@ -336,12 +381,19 @@
     <div class="wrap">
       <p class="kicker">Demo</p>
       <h2>See it on a real board.</h2>
-      <div class="demo-slot">
-        <div>
-          <p class="san">// demo capture coming soon</p>
-          <p>A recorded clip of the animations on lichess.org will land here.
-          Until then: it installs in one click — see the real thing.</p>
-        </div>
+      <p class="muted" style="margin:-0.75rem 0 1.25rem;">Recorded straight from the engine — the same
+      renderer that draws on your board. Above in the hero: the full Signature cycle. Two more looks:</p>
+      <div class="demo-row">
+        <figure>
+          <img src="fire.gif" width="320" height="320" loading="lazy"
+               alt="Fire theme: a queen captures a rook and an inferno effect burns across the square">
+          <figcaption>Fire theme — queen takes, inferno</figcaption>
+        </figure>
+        <figure>
+          <img src="vortex.gif" width="320" height="320" loading="lazy"
+               alt="Vortex effect: a rook captures a knight and a swirling vortex swallows the square">
+          <figcaption>Vortex effect — rook takes, vortex</figcaption>
+        </figure>
       </div>
       <p class="pages-line" style="margin-top:1rem;">works on: live games · analysis board · lichess TV · puzzles</p>
     </div>
