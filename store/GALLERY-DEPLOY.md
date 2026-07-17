@@ -2,7 +2,14 @@
 
 ## Build
 ```bash
-npm run build:gallery   # -> dist/gallery/ (index.html + gallery.js)
+npm run build:gallery   # -> dist/gallery/ (index.html + gallery.js + webp/)
+```
+
+The animation tiles are pre-baked animated WebP in `gallery/webp/`. After changing
+effects, pattern art, or the example FENs in `gallery/main.js`, rebake them first:
+
+```bash
+node scripts/debug/bake-gallery-webp/bake.mjs
 ```
 
 ## Wire the extension ID

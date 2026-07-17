@@ -56,8 +56,11 @@ Ohne Schritt 1 (Version-Bump) erkennt Tampermonkey kein Update, selbst wenn der 
 
 Die oeffentliche Pages-Site (`/docs` auf `main`) ist die GEBAUTE Gallery — Live-Canvas-
 Animationen in voller Qualitaet plus Install-Sektion, kein separates Landing-Page-Artefakt.
-`docs/index.html` + `docs/gallery.js` sind Build-Output; nicht von Hand editieren, sondern
-Aenderungen in `gallery/` machen und neu deployen:
+`docs/index.html` + `docs/gallery.js` + `docs/webp/` sind Build-Output; nicht von Hand
+editieren, sondern Aenderungen in `gallery/` machen und neu deployen. Die Animations-Tiles
+sind vorgebackene animierte WebP (kein Live-Canvas — Performance-Entscheidung, der Captain
+fand das Live-Rendering zu langsam); nach Effekt-/Beispiel-Aenderungen erst
+`node scripts/debug/bake-gallery-webp/bake.mjs` laufen lassen, dann:
 
 ```bash
 npm run build:pages   # build:gallery + kopiert dist/gallery/* -> docs/
@@ -96,7 +99,7 @@ Auto-Updates. Interne Prozess-Docs (Gameplans, TDD-Plaene, superpowers-Specs) li
 ### Extension + Gallery (Pack-System)
 
 - `src/packs.js`: Registry aller wählbaren Animationen (signature/single/theme); `resolvePack(id)` → `{mode,routing,fallback}`
-- `gallery/`: statische Galerie-Website (Live-Previews via Engine); Build `npm run build:gallery` → `dist/gallery/`
+- `gallery/`: statische Galerie-Website; Tiles sind vorgebackene animierte WebP (`gallery/webp/`, erzeugt via `scripts/debug/bake-gallery-webp/bake.mjs` aus der echten Engine — kein Live-Rendering im Browser); Build `npm run build:gallery` → `dist/gallery/`
 - `src/background-entry.js` + `src/background-message.js`: MV3-Service-Worker; empfängt die Pack-Auswahl der Galerie via `externally_connectable` und schreibt `chrome.storage`
 
 ## Animation-System
