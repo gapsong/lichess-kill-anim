@@ -8,6 +8,7 @@
     "build:ext": "node scripts/build-extension.mjs",
     "package:ext": "node scripts/build-extension.mjs --zip",
     "build:gallery": "node scripts/build-gallery.mjs",
+    "build:pages": "npm run build:gallery && cp -R dist/gallery/. docs/",
     "icons": "node scripts/generate-icons.mjs",
     "test": "node --test",
     "lab": "npm --prefix lab run dev",

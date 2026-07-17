@@ -16,10 +16,15 @@ npm run build:gallery   # -> dist/gallery/ (index.html + gallery.js)
 rebuild the extension.
 
 ## Publish on GitHub Pages
-1. Push the contents of `dist/gallery/` to the Pages source (e.g. the `gh-pages`
-   branch root, or a `/docs` folder on `main`).
-2. In the repo settings, enable Pages for that source.
-3. The gallery is then live at https://gapsong.github.io/lichess-kill-anim/.
+The Pages source is the `/docs` folder on `main`. To rebuild and deploy:
+
+```bash
+npm run build:pages   # build:gallery + copy dist/gallery/* -> docs/
+```
+
+Commit the changed `docs/index.html` + `docs/gallery.js` and push. The gallery
+is then live at https://gapsong.github.io/lichess-kill-anim/. (`docs/dev/`
+holds internal dev docs and is left untouched by the copy.)
 
 ## Update the store listing
 Set `STORE_URL` in `gallery/main.js` to the real Web Store listing URL once the
