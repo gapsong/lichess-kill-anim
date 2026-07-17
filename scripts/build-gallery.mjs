@@ -10,6 +10,7 @@ rmSync(outDir, { recursive: true, force: true });
 mkdirSync(outDir, { recursive: true });
 
 cpSync(path.join(root, 'gallery', 'index.html'), path.join(outDir, 'index.html'));
+cpSync(path.join(root, 'gallery', 'webp'), path.join(outDir, 'webp'), { recursive: true });
 
 await build({
   entryPoints: [path.join(root, 'gallery', 'main.js')],

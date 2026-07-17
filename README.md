@@ -70,12 +70,13 @@ repeat the copy-paste manually for future updates.
 
 ## Animation gallery
 
-A static showcase site lets you preview every animation and pattern effect, switch colour themes
-(Classic / Fire / Void / Ice / Gold), and — with the extension installed — apply an animation to
-your board with one click.
+A static showcase site previews every animation and pattern effect as pre-baked animated WebP
+tiles — rendered once from the real engine (`scripts/debug/bake-gallery-webp/`), so the page
+itself does zero per-frame JavaScript.
 
 ```bash
-npm run build:gallery  # -> dist/gallery/  (deploy to GitHub Pages, see store/GALLERY-DEPLOY.md)
+npm run build:pages    # -> docs/  (the GitHub Pages site, see store/GALLERY-DEPLOY.md)
+node scripts/debug/bake-gallery-webp/bake.mjs   # rebake gallery/webp/ after effect changes
 ```
 
 ## Supported pages
