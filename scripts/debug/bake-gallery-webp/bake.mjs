@@ -1,12 +1,12 @@
 // Bakes every gallery tile to an optimized animated WebP in gallery/webp/.
 // Run from the repo root:  node scripts/debug/bake-gallery-webp/bake.mjs
 // Needs: a chromium binary (set CHROMIUM_BIN if playwright's default is missing)
-// and ffmpeg with libwebp_anim. Rebake whenever effects, pattern art, or the
-// example FENs in gallery/main.js change, then `npm run build:pages`.
+// and img2webp from libwebp (Debian/Ubuntu package `webp`). Rebake whenever effects,
+// pattern art, or the example FENs in gallery/main.js change, then `npm run build:pages`.
 import { chromium } from 'playwright';
 import { build } from 'esbuild';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -36,8 +36,15 @@ const PATTERNS = [
   ['hanging-pawn', '6k1/8/8/8/8/2p5/2P5/B5K1 w - - 0 1']
 ];
 
-const PACK_SIZE = 320, PACK_FPS = 24, MAX_FRAMES = 600;
-const PAT_SIZE = 240, PAT_FPS = 20, PAT_SECONDS = 7;
+// Halved output fps compensates the size cost of all-keyframe encoding (see
+// encode()): full frames are ~4x the bytes of delta frames, half the frames keeps
+// the tiles near their old weight. Packs must still STEP at 24fps — the particle
+// tail winds down per tick, so a lower capture fps stretches the animation in
+// wall time instead of saving frames. Hence: step at PACK_FPS, keep every
+// PACK_KEEP_EVERY-th frame, and double the per-frame duration in the file.
+// Patterns are purely time-based, so they can simply capture at a lower fps.
+const PACK_SIZE = 320, PACK_FPS = 24, PACK_KEEP_EVERY = 2, MAX_FRAMES = 600;
+const PAT_SIZE = 240, PAT_FPS = 10, PAT_SECONDS = 7;
 // q60 leaves visible temporal ghosting on the wood squares where effects passed;
 // q75 clears it for ~35% more bytes — still far below the old GIF sizes.
 const WEBP_Q = 75;
@@ -64,9 +71,14 @@ page.on('pageerror', (e) => { console.error('PAGE EXCEPTION:', e.message); proce
 await page.goto('file://' + path.join(tmp, 'capture.html'));
 
 function encode(framesDir, fps, out) {
-  execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-framerate', String(fps),
-    '-i', path.join(framesDir, 'frame_%03d.png'), '-c:v', 'libwebp_anim',
-    '-q:v', String(WEBP_Q), '-compression_level', '6', '-loop', '0', out]);
+  // -kmax 1 forces every frame to be a full-canvas keyframe. Delta frames (small
+  // subrectangles, the default) render fine in Blink but WebKit/iOS Safari draws
+  // them at the wrong scale — on a phone the tiles appear zoomed/shifted with
+  // ghost residue. Full keyframes make that rendering path impossible.
+  const frames = readdirSync(framesDir).filter((f) => f.endsWith('.png')).sort()
+    .map((f) => path.join(framesDir, f));
+  execFileSync('img2webp', ['-loop', '0', '-lossy', '-q', String(WEBP_Q), '-m', '6',
+    '-d', String(Math.round(1000 / fps)), '-kmax', '1', ...frames, '-o', out]);
 }
 
 function frameSink(dir) {
@@ -87,12 +99,12 @@ for (const packId of PACKS) {
   await page.evaluate((a) => window.__initCapture(a), { packId, size: PACK_SIZE, scenarioIndices: null });
   for (let i = 0; i < MAX_FRAMES; i++) {
     const { cycleDone, frame } = await page.evaluate((dt) => window.__step(dt), 1000 / PACK_FPS);
-    sink.save(frame);
+    if (i % PACK_KEEP_EVERY === 0) sink.save(frame);
     if (cycleDone) break;
   }
   const out = path.join(outDir, `pack-${packId}.webp`);
-  encode(dir, PACK_FPS, out);
-  console.log(`pack-${packId}.webp  (${sink.count} frames, ${(sink.count / PACK_FPS).toFixed(1)}s)`);
+  encode(dir, PACK_FPS / PACK_KEEP_EVERY, out);
+  console.log(`pack-${packId}.webp  (${sink.count} frames, ${(sink.count / (PACK_FPS / PACK_KEEP_EVERY)).toFixed(1)}s)`);
 }
 
 for (const [slug, fen] of PATTERNS) {
