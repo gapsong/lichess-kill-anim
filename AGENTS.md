@@ -66,10 +66,21 @@ fand das Live-Rendering zu langsam); nach Effekt-/Beispiel-Aenderungen erst
 npm run build:pages   # build:gallery + kopiert dist/gallery/* -> docs/
 ```
 
+**WICHTIG — WebP-Tiles muessen All-Keyframe sein:** WebKit/iOS Safari rendert animierte
+WebP mit Delta-Frames (Subrechtecke, der Encoder-Default) falsch — auf dem iPhone
+erscheinen die Tiles gezoomt/verschoben mit Geister-Resten (Blink/Chromium rendert
+dieselben Dateien korrekt, deshalb faellt es am Desktop nicht auf). Deshalb encodiert
+`bake.mjs` via `img2webp -kmax 1` (Paket `webp`, nicht mehr ffmpeg): jeder Frame ist ein
+volles Canvas-Keyframe. Kostet ~2x Dateigroesse; kompensiert durch halbierte Output-fps
+per Frame-Decimation (`PACK_KEEP_EVERY` in `bake.mjs` — die Engine muss weiter mit 24fps
+steppen, weil der Partikel-Ausklang pro Tick statt pro Zeit ablaeuft). Nie auf einen
+Delta-Frame-Encoder zurueckwechseln, sonst reisst der iPhone-Bug wieder auf.
+
 Der Install-Link in der Gallery zeigt auf die kanonische Gist-Raw-URL oben — NICHT auf die
 Repo-Raw-URL, denn nur der Gist traegt den `@downloadURL`/`@updateURL`-Banner-Vertrag fuer
-Auto-Updates. Interne Prozess-Docs (Gameplans, TDD-Plaene, superpowers-Specs) liegen in
-`docs/dev/` und werden vom Copy nicht angefasst.
+Auto-Updates. `docs/` wird von Pages KOMPLETT oeffentlich serviert — interne Prozess-Docs
+(Gameplans, TDD-Plaene, superpowers-Specs) haben dort nichts verloren; der fruehere
+`docs/dev/`-Baum wurde deshalb entfernt (Historie behaelt ihn).
 
 ## Wichtige Module
 
