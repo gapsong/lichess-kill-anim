@@ -10,11 +10,7 @@
     "build:gallery": "node scripts/build-gallery.mjs",
     "build:pages": "npm run build:gallery && cp -R dist/gallery/. docs/",
     "icons": "node scripts/generate-icons.mjs",
-    "test": "node --test",
-    "lab": "npm --prefix lab run dev",
-    "lab:install": "npm --prefix lab install",
-    "lab:promote": "node lab/src/promote.js",
-    "lab:generate": "node lab/scripts/generate.mjs"
+    "test": "node --test"
   },
   "dependencies": {
     "chess.js": "^1.4.0"
