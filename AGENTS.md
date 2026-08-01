@@ -256,20 +256,13 @@ Bei En Passant ist `capturedAt` nicht gleich `to`; Animationen sollen auf `captu
 
 - `node:test` als Test Runner
 - `jsdom` fuer DOM-nahe MoveFeed-Tests
-- 104 Tests insgesamt
+- 130 Tests insgesamt
 
 Abgedeckt:
 - Routing aller Figuren zu korrekten Partikel-Effekten (SIG-Tabelle)
 - `buildupMs`-Buildup-Timing: Pending-Queue und `fireAt`-Logik
 - Board-Shake via `onImpact`-Callback
 - Regressionstests fuer Lichess TV, Puzzle-ID-Reset, Feedback-Marker, En Passant
-
-## Animation Lab (`lab/`) — eingefroren
-
-`lab/` und `scripts/animations/` sind eingefroren: Sie haben keinen Production-Bezug mehr, da die Partikel-Engine keine Spritesheets benoetigt. Die Verzeichnisse existieren weiterhin auf Disk. Ein Umbau auf Partikel-Varianten ist in einer separaten Spec geplant und nicht Teil des aktuellen Stands.
-
-Pure Logik liegt in `lab/src/tournament.js` und wird via `node --test`
-mit `test/tournament.test.js` abgedeckt.
 
 ## Scope
 
