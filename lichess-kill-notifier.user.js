@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Lichess Kill Notifier
 // @namespace    dismo/lichess-kill
-// @version      4.3.5
+// @version      4.4.0
 // @description  Killing-Animationen bei Schlagzuegen mit eigenem Chess-State statt fragilem Board-DOM.
 // @author       Dismo
 // @match        https://lichess.org/*
@@ -61,42 +61,56 @@
       this.resizeObserver = null;
     }
     attach() {
-      this.board = this.document.querySelector("cg-board");
-      if (!this.board) return null;
+      if (!this._ensureBoard()) return null;
       this.canvas = this.document.getElementById("lichess-kill-overlay");
       if (!this.canvas) {
         this.canvas = this.document.createElement("canvas");
         this.canvas.id = "lichess-kill-overlay";
         Object.assign(this.canvas.style, {
-          position: "fixed",
+          position: "absolute",
+          left: "0px",
+          top: "0px",
           pointerEvents: "none",
-          zIndex: "99998"
+          zIndex: "3"
         });
-        this.document.body.appendChild(this.canvas);
-      }
-      if (this.ResizeObserver && !this.resizeObserver) {
-        this.resizeObserver = new this.ResizeObserver(() => this.sync());
-        this.resizeObserver.observe(this.board);
       }
       this.sync();
       return this.canvas;
     }
-    sync() {
-      if (!this.board) {
-        this.board = this.document.querySelector("cg-board");
+    // (Re)acquires cg-board. Lichess recreates the element on board flips,
+    // resizes and SPA navigation — a cached detached node reports a 0x0 rect and
+    // would silently collapse the overlay, so always check isConnected.
+    _ensureBoard() {
+      if (this.board && this.board.isConnected !== false) return this.board;
+      const board = this.document.querySelector("cg-board");
+      if (!board) return null;
+      this.board = board;
+      if (this.ResizeObserver) {
+        this.resizeObserver?.disconnect();
+        this.resizeObserver = new this.ResizeObserver(() => this.sync());
+        this.resizeObserver.observe(board);
       }
-      if (!this.board || !this.canvas) return null;
-      const rect = this.board.getBoundingClientRect();
+      return board;
+    }
+    sync() {
+      const board = this._ensureBoard();
+      if (!board || !this.canvas) return null;
+      const container = board.parentElement;
+      if (container && this.canvas.parentElement !== container) {
+        container.appendChild(this.canvas);
+      }
+      const rect = board.getBoundingClientRect();
       const size = rect.width;
       const dpr = this.devicePixelRatio;
       Object.assign(this.canvas.style, {
-        left: `${rect.left}px`,
-        top: `${rect.top}px`,
+        left: `${board.offsetLeft || 0}px`,
+        top: `${board.offsetTop || 0}px`,
         width: `${size}px`,
         height: `${size}px`
       });
-      this.canvas.width = Math.round(size * dpr);
-      this.canvas.height = Math.round(size * dpr);
+      const bufferSize = Math.round(size * dpr);
+      if (this.canvas.width !== bufferSize) this.canvas.width = bufferSize;
+      if (this.canvas.height !== bufferSize) this.canvas.height = bufferSize;
       const context = this.getContext(this.canvas);
       context?.setTransform?.(dpr, 0, 0, dpr, 0, 0);
       return {
@@ -3734,9 +3748,12 @@
       // 0 = instant impact; >0 = crosshair buildup before impact
       routing = null,
       // map attacker piece -> effect; null = built-in SIG
-      fallback = "splatter"
+      fallback = "splatter",
+      getPieceImage = null
+      // (color, type) => CanvasImageSource|null; real lichess piece art
     } = {}) {
       this.onImpact = onImpact;
+      this.getPieceImage = getPieceImage;
       this.mode = mode;
       this.intensity = Math.max(1, Math.min(10, intensity));
       this.soundOn = soundOn;
@@ -3877,6 +3894,8 @@
         x: cx,
         y: cy,
         mode,
+        pieceColor: victim.color,
+        pieceType: victim.type,
         char: GLYPH[victim.type] || GLYPH.p,
         color: white ? "#f4f3ee" : "#2b2926",
         stroke: Math.max(1, S * 0.022),
@@ -3896,6 +3915,8 @@
         dirx,
         diry,
         rotDeg,
+        pieceColor: victim.color,
+        pieceType: victim.type,
         char: GLYPH[victim.type] || GLYPH.p,
         color: white ? "#f4f3ee" : "#2b2926",
         stroke: Math.max(1, S * 0.022),
@@ -4153,6 +4174,10 @@
       }
       return { sx, sy, dx, dy, rot, a };
     }
+    // The real lichess piece image when available; null falls back to the glyph.
+    pieceImageFor(p) {
+      return this.getPieceImage?.(p.pieceColor, p.pieceType) ?? null;
+    }
     drawGlyph(p, ctx, t) {
       const tf = this.glyphTransform(p.mode, t, p.S);
       ctx.save();
@@ -4160,18 +4185,24 @@
       ctx.rotate(tf.rot);
       ctx.scale(tf.sx, tf.sy);
       ctx.globalAlpha = Math.max(0, tf.a);
-      ctx.font = `${p.fontPx}px ${GFONT}`;
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
       if (p.mode === "ascension") {
         ctx.shadowColor = "#ffd86b";
         ctx.shadowBlur = 12;
       }
-      ctx.lineWidth = p.stroke;
-      ctx.strokeStyle = p.strokeColor;
-      ctx.strokeText(p.char, 0, 0);
-      ctx.fillStyle = p.color;
-      ctx.fillText(p.char, 0, 0);
+      const img = this.pieceImageFor(p);
+      if (img) {
+        const side = p.S * 0.9;
+        ctx.drawImage(img, -side / 2, -side / 2, side, side);
+      } else {
+        ctx.font = `${p.fontPx}px ${GFONT}`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.lineWidth = p.stroke;
+        ctx.strokeStyle = p.strokeColor;
+        ctx.strokeText(p.char, 0, 0);
+        ctx.fillStyle = p.color;
+        ctx.fillText(p.char, 0, 0);
+      }
       ctx.restore();
       ctx.shadowBlur = 0;
       ctx.globalAlpha = 1;
@@ -4190,14 +4221,20 @@
       else ctx.rect(-H, 0, 2 * H, H);
       ctx.clip();
       ctx.globalAlpha = Math.max(0, a);
-      ctx.font = `${p.fontPx}px ${GFONT}`;
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.lineWidth = p.stroke;
-      ctx.strokeStyle = p.strokeColor;
-      ctx.strokeText(p.char, 0, 0);
-      ctx.fillStyle = p.color;
-      ctx.fillText(p.char, 0, 0);
+      const img = this.pieceImageFor(p);
+      if (img) {
+        const side = p.S * 0.9;
+        ctx.drawImage(img, -side / 2, -side / 2, side, side);
+      } else {
+        ctx.font = `${p.fontPx}px ${GFONT}`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.lineWidth = p.stroke;
+        ctx.strokeStyle = p.strokeColor;
+        ctx.strokeText(p.char, 0, 0);
+        ctx.fillStyle = p.color;
+        ctx.fillText(p.char, 0, 0);
+      }
       ctx.restore();
       ctx.globalAlpha = 1;
     }
@@ -5777,30 +5814,42 @@
       this.last = 0;
     }
     attach() {
-      this.board = this.document.querySelector("cg-board");
-      if (!this.board) return null;
+      if (!this._ensureBoard()) return null;
       this.canvas = this.document.getElementById("lichess-pattern-overlay");
       if (!this.canvas) {
         this.canvas = this.document.createElement("canvas");
         this.canvas.id = "lichess-pattern-overlay";
-        Object.assign(this.canvas.style, { position: "fixed", pointerEvents: "none", zIndex: "99997" });
-        this.document.body.appendChild(this.canvas);
+        Object.assign(this.canvas.style, { position: "absolute", left: "0px", top: "0px", pointerEvents: "none", zIndex: "2" });
       }
-      if (this.ResizeObserver && !this.resizeObserver) {
-        this.resizeObserver = new this.ResizeObserver(() => this.sync());
-        this.resizeObserver.observe(this.board);
-      }
+      this.sync();
       return this.canvas;
     }
+    // Same stale-node guard as CanvasOverlay: lichess recreates cg-board on
+    // flips/resizes/SPA navigation, and a detached node reports a 0x0 rect.
+    _ensureBoard() {
+      if (this.board && this.board.isConnected !== false) return this.board;
+      const board = this.document.querySelector("cg-board");
+      if (!board) return null;
+      this.board = board;
+      if (this.ResizeObserver) {
+        this.resizeObserver?.disconnect();
+        this.resizeObserver = new this.ResizeObserver(() => this.sync());
+        this.resizeObserver.observe(board);
+      }
+      return board;
+    }
     sync() {
-      if (!this.board) this.board = this.document.querySelector("cg-board");
-      if (!this.board || !this.canvas) return null;
-      const rect = this.board.getBoundingClientRect();
+      const board = this._ensureBoard();
+      if (!board || !this.canvas) return null;
+      const container = board.parentElement;
+      if (container && this.canvas.parentElement !== container) container.appendChild(this.canvas);
+      const rect = board.getBoundingClientRect();
       const size = rect.width;
       const dpr = this.devicePixelRatio;
-      Object.assign(this.canvas.style, { left: `${rect.left}px`, top: `${rect.top}px`, width: `${size}px`, height: `${size}px` });
-      this.canvas.width = Math.round(size * dpr);
-      this.canvas.height = Math.round(size * dpr);
+      Object.assign(this.canvas.style, { left: `${board.offsetLeft || 0}px`, top: `${board.offsetTop || 0}px`, width: `${size}px`, height: `${size}px` });
+      const bufferSize = Math.round(size * dpr);
+      if (this.canvas.width !== bufferSize) this.canvas.width = bufferSize;
+      if (this.canvas.height !== bufferSize) this.canvas.height = bufferSize;
       const context = this.getContext(this.canvas);
       context?.setTransform?.(dpr, 0, 0, dpr, 0, 0);
       const isBlackOrientation = this.document.querySelector(".cg-wrap")?.classList.contains("orientation-black") ?? false;
@@ -5885,6 +5934,73 @@
     }
   };
 
+  // src/piece-sprites.js
+  var TYPE_CLASS = { p: "pawn", n: "knight", b: "bishop", r: "rook", q: "queen", k: "king" };
+  var COLOR_CLASS = { w: "white", b: "black" };
+  function extractCssUrl(backgroundImage) {
+    if (typeof backgroundImage !== "string") return null;
+    const match = backgroundImage.match(/url\((['"]?)(.+?)\1\)/);
+    return match ? match[2] : null;
+  }
+  var PieceSprites = class {
+    constructor({
+      document: document2 = globalThis.document,
+      getComputedStyle = (el) => globalThis.getComputedStyle(el),
+      createImage = () => new globalThis.Image()
+    } = {}) {
+      this.document = document2;
+      this.getComputedStyle = getComputedStyle;
+      this.createImage = createImage;
+      this.cache = /* @__PURE__ */ new Map();
+    }
+    // Preload all 12 piece images so the first capture already has them.
+    warm() {
+      for (const color of Object.keys(COLOR_CLASS)) {
+        for (const type of Object.keys(TYPE_CLASS)) this._resolve(color, type);
+      }
+    }
+    // Returns a drawable image for the piece, or null (not loaded yet / failed).
+    get(color, type) {
+      const entry = this._resolve(color, type);
+      return entry && entry.ready ? entry.image : null;
+    }
+    _resolve(color, type) {
+      const key = `${color}${type}`;
+      if (this.cache.has(key)) return this.cache.get(key);
+      const url = this._probeUrl(color, type);
+      if (!url) {
+        if (this.document?.querySelector?.("cg-board")) this.cache.set(key, null);
+        return null;
+      }
+      const entry = { image: this.createImage(), ready: false };
+      entry.image.onload = () => {
+        entry.ready = true;
+      };
+      entry.image.onerror = () => {
+        this.cache.set(key, null);
+      };
+      entry.image.src = url;
+      this.cache.set(key, entry);
+      return entry;
+    }
+    _probeUrl(color, type) {
+      const doc = this.document;
+      const host = doc?.querySelector?.("cg-board") || doc?.querySelector?.(".cg-wrap");
+      if (!host) return null;
+      const probe = doc.createElement("piece");
+      probe.className = `${COLOR_CLASS[color] || "black"} ${TYPE_CLASS[type] || "pawn"}`;
+      Object.assign(probe.style, { visibility: "hidden", pointerEvents: "none" });
+      host.appendChild(probe);
+      let url = null;
+      try {
+        url = extractCssUrl(this.getComputedStyle(probe)?.backgroundImage);
+      } finally {
+        probe.remove();
+      }
+      return url;
+    }
+  };
+
   // src/runtime.js
   var PIECE_NAMES = { p: "Pawn", n: "Knight", b: "Bishop", r: "Rook", q: "Queen", k: "King" };
   function domToast(doc, text) {
@@ -5904,7 +6020,8 @@
       color: "#ff6b6b",
       padding: "10px 20px",
       borderRadius: "8px",
-      border: "2px solid #ff6b6b"
+      border: "2px solid #ff6b6b",
+      pointerEvents: "none"
     });
     doc.body.appendChild(element);
     setTimeout(() => element.remove(), 2e3);
@@ -5921,6 +6038,7 @@
     loc = typeof location !== "undefined" ? location : null,
     observerFactory = (cb) => new MutationObserver(cb),
     patternOverlay = new PatternOverlay(),
+    pieceSprites = null,
     derivePositionFn = derivePosition,
     detectPatternsFn = detectPatterns,
     notify
@@ -5934,6 +6052,7 @@
     let observer = null;
     let lastPatternSig = null;
     let lastSnapshot = null;
+    const sprites = pieceSprites ?? (doc ? new PieceSprites({ document: doc }) : null);
     function ensureRenderer() {
       overlay.attach();
       const state = overlay.sync();
@@ -5949,6 +6068,7 @@
           intensity: settings.intensity,
           soundOn: settings.soundOn,
           buildupMs: settings.buildupMs,
+          getPieceImage: (color, type) => sprites?.get(color, type) ?? null,
           onImpact: (renderEvent, opts) => {
             if (overlay.board && settings.shakePieces.includes(renderEvent?.attacker?.piece)) {
               shakeElement(overlay.board, {
@@ -6023,6 +6143,7 @@
         observer = observerFactory(scan);
         observer.observe(doc.body, { childList: true, subtree: true });
       }
+      sprites?.warm();
       scan();
     }
     function applyConfig(partial) {

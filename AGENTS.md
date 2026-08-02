@@ -231,6 +231,12 @@ Wichtig: SAN-Zuege duerfen nicht mit `Set` dedupliziert werden. Dieselbe SAN kan
 
 Wenn keine Zugliste gefunden wird, soll `readSnapshot()` `null` liefern und das Userscript still bleiben.
 
+**Wichtig — `cg-board` ist KEIN stabiler DOM-Knoten:** Lichess erzeugt das `cg-board`-Element bei Board-Flip, Resize und SPA-Navigation neu. Ein gecachter, inzwischen detachter Knoten liefert `getBoundingClientRect()` = 0x0 bei (0,0) — ein Overlay, das darauf synct, kollabiert still auf Groesse 0 und alle Animationen verschwinden bzw. landen falsch. Deshalb pruefen beide Overlays (`CanvasOverlay`, `PatternOverlay`) in `_ensureBoard()` `board.isConnected` und re-queryen + re-observen bei Bedarf. Neue Stellen, die `cg-board` referenzieren, muessen dasselbe tun.
+
+**Wichtig — Overlays leben IM Board-Container, nicht auf `body`:** Die Overlay-Canvases werden als Geschwister von `cg-board` in dessen Parent (`cg-container`, `position:absolute`, deckungsgleich mit dem Brett) gemountet, mit `position:absolute; left/top = offsetLeft/offsetTop`. So folgen sie dem Brett automatisch durch Scroll, Zoom und Layout-Aenderungen. `position:fixed` auf `body` (der fruehere Ansatz) driftet, weil nur der ResizeObserver — nicht Scroll/Relayout — einen Re-Sync ausloest. Alle Overlay-Elemente (auch der Toast `#k-toast`) brauchen `pointer-events: none`, sonst blockieren sie Zuege.
+
+**Wichtig — aktives Piece-Set auslesen (`src/piece-sprites.js`):** Lichess setzt die Figurengrafiken rein per CSS (`piece.white.knight { background-image: url(...) }`, URL haengt vom gewaehlten Set ab, oft gehasht wie `bN.28c70309.svg`). Um das aktive Set ohne Hardcoding zu lesen: verstecktes Probe-Element `<piece class="white knight">` IN das lebende `cg-board` haengen (damit alle scoped Selektoren greifen), `getComputedStyle(...).backgroundImage` lesen, Probe sofort entfernen. Funktioniert auch fuer Figurentypen, die gerade nicht auf dem Brett stehen. `ParticleFxRenderer` bekommt die Bilder via `getPieceImage(color, type)` und faellt auf den Unicode-Glyph zurueck, solange ein Bild fehlt.
+
 ## Architektur
 
 ```
