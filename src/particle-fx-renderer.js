@@ -307,7 +307,7 @@ export class ParticleFxRenderer {
       case 'nuke': sx = sy = 1 + 0.7 * t; a = 1 - t; break;
       case 'splatter': sx = sy = 1 + 0.25 * t; a = 1 - t; break;
       case 'smash': { const e = Math.min(1, t / 0.6); sx = 1 + 0.7 * e; sy = Math.max(0.05, 1 - 0.95 * e); dy = S * 0.4 * e; a = t < 0.6 ? 1 : 1 - (t - 0.6) / 0.4; break; }
-      case 'zap': a = (Math.floor(t * 6) % 2 === 0) ? 1 : 0.15; sx = sy = 1 - 0.2 * t; dy = -S * 0.2 * t; if (t > 0.85) a = Math.max(0, (1 - t) / 0.15); break;
+      case 'zap': a = (Math.floor(t * 6) % 2 === 0) ? 1 : 0.15; sx = sy = 1 - 0.2 * t; dy = -S * 0.08 * t; if (t > 0.85) a = Math.max(0, (1 - t) / 0.15); break;
       case 'ascension': dy = -S * 1.3 * t; sx = sy = 1 + 0.15 * t; a = 1 - t; break;
       case 'vortex': sx = sy = Math.max(0, 1 - t); rot = t * Math.PI * 4; a = 1 - t; break;
       case 'inferno': a = 1 - t; sy = 1 - 0.15 * t; dy = S * 0.1 * t; break;
@@ -423,6 +423,12 @@ export class ParticleFxRenderer {
   }
 
   /* ================= EFFECTS ================= */
+  // Composition rule: every effect's alpha-weighted visual centroid over its
+  // whole lifetime must stay within ~10% of a square from (cx, cy) — floating
+  // texts start below center and rise through it, debris kicks/gravity are
+  // balanced so the effect reads as ON the captured square, not above/below it.
+  // (Measured per effect; only 'ascension' may drift up — the king ascending
+  // IS the effect.) Keep this invariant when adding or tuning effects.
   spawn(id, cx, cy, S, victim) {
     const lvl = this.intensity;
     const drama = this.victimDrama(victim.type);
@@ -439,7 +445,7 @@ export class ParticleFxRenderer {
       this.addP({ kind: 'ring', x: cx, y: cy, r0: S * 0.15, r1: S * 2.7, lw: S * 0.16, color: '#b98cff', max: 22 });
       this.addP({ kind: 'ring', x: cx, y: cy, r0: S * 0.10, r1: S * 1.7, lw: S * 0.09, color: '#ecd9ff', max: 15 });
       this.glyph(victim, cx, cy, S, 'nuke', 18);
-      this.bigText('BOOM', '#cf9bff', cx, cy, 1.0 * sizeBoost);
+      this.bigText('BOOM', '#cf9bff', cx, cy + S * 0.2, 1.0 * sizeBoost);
       let N = Math.round(46 * cs);
       for (let i = 0; i < N; i++) { const a = Math.random() * 6.28, sp = this.rand(3, 13); this.addP({ x: cx, y: cy, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, g: 0.06, drag: 0.93, max: this.rand(28, 52), size: this.rand(4, 11), color: this.pickc(['#f3e6ff', '#c9a0ff', '#9b5cff', '#5e23c9']), glow: 14, grow: 0.3 }); }
       N = Math.round(13 * cs);
@@ -450,15 +456,15 @@ export class ParticleFxRenderer {
     else if (id === 'splatter') {
       this.glyph(victim, cx, cy, S, 'splatter', 14);
       const N = Math.round(34 * cs);
-      for (let i = 0; i < N; i++) { const a = Math.random() * 6.28, sp = this.rand(2, 11); this.addP({ x: cx, y: cy, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 2, g: 0.45, drag: 0.99, max: this.rand(30, 60), size: this.rand(2, 8), color: this.pickc(['#b81f12', '#8e0f08', '#d6332a', '#6e0a05']) }); }
+      for (let i = 0; i < N; i++) { const a = Math.random() * 6.28, sp = this.rand(2, 11); this.addP({ x: cx, y: cy, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 2.5, g: 0.28, drag: 0.99, max: this.rand(22, 42), size: this.rand(2, 8), color: this.pickc(['#b81f12', '#8e0f08', '#d6332a', '#6e0a05']) }); }
     }
     else if (id === 'slash') {
       // directional streak + split halves
       this.addP({ kind: 'streak', x: cx, y: cy, ang: this.rand(-0.9, -0.5), len: S * 2.5, th: Math.max(3, S * 0.06), max: 18 });
-      this.glyphHalf(victim, cx, cy, S, 'top', -1, 1, -32, 32);
-      this.glyphHalf(victim, cx, cy, S, 'bottom', 1, 1.4, 30, 32);
+      this.glyphHalf(victim, cx, cy, S, 'top', -1, -1, -32, 32);
+      this.glyphHalf(victim, cx, cy, S, 'bottom', 1, 1, 30, 32);
       const N = Math.round(26 * cs);
-      for (let i = 0; i < N; i++) { const a = -0.6 + this.rand(-0.5, 0.5) + (i % 2 ? Math.PI : 0), sp = this.rand(4, 12); this.addP({ x: cx, y: cy, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, g: 0.4, drag: 0.99, max: this.rand(26, 46), size: this.rand(2, 6), color: this.pickc(['#c4231a', '#8e0f08', '#e0392e']) }); }
+      for (let i = 0; i < N; i++) { const a = -0.6 + this.rand(-0.5, 0.5) + (i % 2 ? Math.PI : 0), sp = this.rand(4, 12); this.addP({ x: cx, y: cy, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, g: 0.26, drag: 0.99, max: this.rand(24, 42), size: this.rand(2, 6), color: this.pickc(['#c4231a', '#8e0f08', '#e0392e']) }); }
     }
     else if (id === 'zap') {
       this.flashBlob(cx, cy, '#bfe9ff', S, 12);
@@ -469,14 +475,14 @@ export class ParticleFxRenderer {
     }
     else if (id === 'smash') {
       this.glyph(victim, cx, cy, S, 'smash', 22);
-      this.bigText('POW!', '#ffd24a', cx, cy - S * 0.2, 1.25 * sizeBoost);
+      this.bigText('POW!', '#ffd24a', cx, cy + S * 0.15, 1.25 * sizeBoost);
       const N = Math.round(26 * cs);
       for (let i = 0; i < N; i++) { const dir = (i % 2 ? 1 : -1); this.addP({ x: cx + dir * S * 0.1, y: cy + S * 0.2, vx: dir * this.rand(2, 8), vy: this.rand(-3, -0.5), g: 0.25, drag: 0.95, max: this.rand(26, 46), size: this.rand(3, 8), color: this.pickc(['#9b8b73', '#c2b393', '#7a6e5a']), grow: 0.3 }); }
     }
     else if (id === 'pixel') {
       const val = VALUE[victim.type];
       this.glyph(victim, cx, cy, S, 'pixel', 10);
-      this.bigText('+' + (val || 1), '#63e88a', cx, cy - S * 0.3, 0.95 * sizeBoost, "'Bungee',monospace,monospace");
+      this.bigText('+' + (val || 1), '#63e88a', cx, cy + S * 0.35, 0.95 * sizeBoost, "'Bungee',monospace,monospace");
       const pal = ['#ffffff', '#ffe14d', '#46d17a', '#5ec6ff', '#ff5edb', '#ff6a3d'];
       const N = Math.round(30 * cs);
       for (let i = 0; i < N; i++) { const a = Math.random() * 6.28, sp = this.rand(2, 9); this.addP({ x: cx, y: cy, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 2, g: 0.3, drag: 0.97, max: this.rand(22, 40), size: this.rand(4, 9), color: this.pickc(pal), shape: 'square', vrot: this.rand(-0.2, 0.2) }); }
@@ -497,15 +503,15 @@ export class ParticleFxRenderer {
       this.flashBlob(cx, cy, '#ff8a3d', S, 14);
       this.glyph(victim, cx, cy, S, 'inferno', 36);
       let N = Math.round(40 * cs);
-      for (let i = 0; i < N; i++) this.addP({ kind: 'ember', x: cx + this.rand(-S * 0.3, S * 0.3), y: cy + this.rand(-S * 0.1, S * 0.3), vx: this.rand(-1.5, 1.5), vy: this.rand(-5, -1.5), g: -0.03, drag: 0.98, max: this.rand(26, 52), size: this.rand(4, 11), color: this.pickc(['#ffe14d', '#ff8a1f', '#ff4d12', '#cf2a0a']), glow: 14, grow: -0.08 });
+      for (let i = 0; i < N; i++) this.addP({ kind: 'ember', x: cx + this.rand(-S * 0.3, S * 0.3), y: cy + this.rand(S * 0.15, S * 0.55), vx: this.rand(-1.5, 1.5), vy: this.rand(-2.4, -0.7), g: -0.01, drag: 0.98, max: this.rand(22, 40), size: this.rand(4, 11), color: this.pickc(['#ffe14d', '#ff8a1f', '#ff4d12', '#cf2a0a']), glow: 14, grow: -0.08 });
       N = Math.round(10 * cs);
-      for (let i = 0; i < N; i++) this.addP({ x: cx + this.rand(-S * 0.2, S * 0.2), y: cy, vx: this.rand(-0.6, 0.6), vy: this.rand(-2, -0.5), g: -0.01, drag: 0.98, max: this.rand(50, 80), size: this.rand(8, 16), color: 'rgba(40,34,30,.5)', grow: 0.6, fadeIn: true });
+      for (let i = 0; i < N; i++) this.addP({ x: cx + this.rand(-S * 0.2, S * 0.2), y: cy + S * 0.25, vx: this.rand(-0.6, 0.6), vy: this.rand(-1.2, -0.3), g: -0.006, drag: 0.98, max: this.rand(44, 70), size: this.rand(8, 16), color: 'rgba(40,34,30,.5)', grow: 0.6, fadeIn: true });
     }
     else if (id === 'shatter') {
       const col = victim.color === 'w' ? '#e8e4da' : '#3a3833';
       this.glyph(victim, cx, cy, S, 'shatter', 14);
       let N = Math.round(16 * cs);
-      for (let i = 0; i < N; i++) { const a = Math.random() * 6.28, sp = this.rand(2, 8); this.addP({ x: cx, y: cy, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 3, g: 0.35, drag: 0.99, max: this.rand(30, 55), size: this.rand(4, 9), color: col, shape: 'square', vrot: this.rand(-0.3, 0.3) }); }
+      for (let i = 0; i < N; i++) { const a = Math.random() * 6.28, sp = this.rand(2, 8); this.addP({ x: cx, y: cy, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 3, g: 0.26, drag: 0.99, max: this.rand(26, 46), size: this.rand(4, 9), color: col, shape: 'square', vrot: this.rand(-0.3, 0.3) }); }
       N = Math.round(20 * cs);
       for (let i = 0; i < N; i++) { const a = Math.random() * 6.28, sp = this.rand(0.5, 3); this.addP({ x: cx, y: cy, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, g: 0.02, drag: 0.97, max: this.rand(40, 70), size: this.rand(1, 2.5), color: 'rgba(200,196,186,.7)' }); }
     }

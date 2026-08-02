@@ -158,6 +158,27 @@ Zusaetzliche Effekte im Pool (erreichbar ueber `mode: 'random'` oder fixe id): `
 
 Unabhaengig vom Angreifer-Routing (SIG-Tabelle oben) skaliert `ParticleFxRenderer.victimDrama(victim.type)` jeden Effekt zusaetzlich nach dem Materialwert der GESCHLAGENEN Figur: Bauer/Minorfigur bleiben nahe Baseline, ein Turm ist spuerbar groesser, eine Dame ist der Hoehepunkt (bis 1.6x). Der Faktor fliesst in `spawn()` in die Partikelanzahl (`cs`, volle Staerke) und in eine gedaempfte `sizeBoost`-Variante von `S` (Glyph/Flash/Ring/Beam-Groessen, halbe Staerke), sowie in `fireImpact()` in Shake-Amplitude und -Dauer. Koenig bleibt bei Baseline (kein echter Capture, `ascension` ist ohnehin schon das dramatischste Preset). Neue Effekte sollten diesen Hebel weiterverwenden statt eine eigene Skalierung zu erfinden.
 
+### Visuelle Zentrierung der Effekte (Centroid-Invariante, seit v4.4.1)
+
+**Die Anker-Geometrie ist korrekt und mehrfach vermessen — bei "Animation sitzt zu hoch/
+tief"-Reports NICHT zuerst die Koordinaten verdaechtigen.** Auf echtem lichess.org wurde der
+Draw-Anker (drawImage-Transform vs. Chessground-Piece-Translate) mit exakt 0.0px Abweichung
+gemessen: /analysis, /training (Loesung abspielen), /tv, beide Orientierungen, dpr 1/1.25/2,
+Resize. Was frueher als "leicht nach oben verschoben" wahrgenommen wurde, war die
+**Komposition**: steigende Texte (`+1`, `POW!`, `BOOM`) spawnten ueber dem Zentrum, Partikel
+bekamen Aufwaerts-Kicks, der zap-Blitz kommt von oben — der visuelle Schwerpunkt lag dadurch
+bis zu ~40% eines Feldes ueber dem Feldzentrum (pixel/Bauern-Capture am schlimmsten, und
+Bauern-Captures sind die haeufigsten).
+
+Invariante (Kommentar an `spawn()` in `src/particle-fx-renderer.js`): der alpha-gewichtete
+visuelle Schwerpunkt jedes Effekts ueber die GESAMTE Lebensdauer bleibt innerhalb ~10% eines
+Feldes um `(cx, cy)`. Float-Texte starten deshalb UNTER dem Zentrum und steigen durch es
+hindurch; Kick/Gravity von Debris sind ausbalanciert. Einzige Ausnahme: `ascension` (Koenig
+steigt auf — das Aufsteigen IST der Effekt). Messen statt schaetzen: Offscreen-Canvas,
+Effekt per virtueller Uhr ticken, pro Frame alpha-gewichtete Pixel-Zentroide akkumulieren
+(Referenz-Harness: PR #18). `splatter` hat hohe Varianz (wenige grosse Blobs dominieren die
+Masse), im Mittel aber zentriert. Neue Effekte gegen diese Invariante messen.
+
 ### Intro/Faint-Lifecycle fuer ALLE Pattern-Hints
 
 **Universell (seit v4.3.1):** *Jeder* Pattern-Hint — nicht mehr nur battery/rooks/outpost — spielt beim ersten Erscheinen einen einmaligen starken Intro-Pulse (900ms, `INTRO_MS` in `src/pattern-overlay.js`), danach faellt die Deckkraft auf einen niedrigen Dauerzustand (`STEADY_FADE = 0.16`), solange das Pattern bestehen bleibt ("Pop, dann dezent ausfaden"). `PatternOverlay` trackt dafuer pro Pattern-Key (`type|side|squares`) den ersten Sichtungs-Zeitpunkt (`firstSeen`-Map) und berechnet den Fade-Faktor ueber `fadeFor(pattern, now)` (gilt jetzt fuer alle Typen, kein `FADE_LIFECYCLE_TYPES`-Gate mehr).
@@ -314,3 +335,11 @@ Temporare Browser-Inspektoren:
 - `scripts/debug/check-userscript-tv.mjs`
 
 Diese Scripts brauchen einen echten Browser. Sie sind Diagnosewerkzeuge, nicht Teil des normalen Builds.
+
+**Userscript in Playwright auf echtem lichess.org testen:** lichess setzt eine strikte CSP
+(`script-src` ohne `unsafe-inline`), die `page.addScriptTag({ content })` blockiert. Loesung:
+Browser-Context mit `bypassCSP: true` erzeugen (entspricht dem, was Tampermonkey effektiv
+tut), dann das gebaute `.user.js` als Inline-Script injizieren — es braucht keine GM-APIs
+(`@grant none`). Zuege lassen sich per Klick-Klick auf Feldzentren spielen (Koordinaten aus
+`cg-board.getBoundingClientRect()`); die echten Feld-Anker liefert Chessground selbst ueber
+die `translate(x, y)`-Styles der `piece`-Elemente (Feld-Topleft in Board-Pixeln).
