@@ -136,3 +136,45 @@ test('king victim does not get the material-value drama boost (ascension stays i
   rBaseline.play(reFor('q', 'p'));
   assert.equal(r.victimDrama('k'), r.victimDrama('p'));
 });
+
+function recordingCtx() {
+  const calls = [];
+  const noop = () => {};
+  return {
+    calls,
+    save: noop, restore: noop, translate: noop, rotate: noop, scale: noop,
+    beginPath: noop, rect: noop, clip: noop, arc: noop, fill: noop, stroke: noop,
+    moveTo: noop, lineTo: noop, fillRect: noop,
+    createRadialGradient: () => ({ addColorStop: noop }),
+    createLinearGradient: () => ({ addColorStop: noop }),
+    drawImage: (...args) => calls.push(['drawImage', ...args]),
+    strokeText: (...args) => calls.push(['strokeText', ...args]),
+    fillText: (...args) => calls.push(['fillText', ...args])
+  };
+}
+
+test('glyph draws the real lichess piece image when getPieceImage provides one', () => {
+  const image = { fake: 'wQ.svg' };
+  const requested = [];
+  const r = new ParticleFxRenderer({
+    soundOn: false,
+    getPieceImage: (color, type) => { requested.push(color + type); return image; }
+  });
+  r.play({ board: { squareSize: 80 }, attacker: { piece: 'q' }, victim: { piece: 'q', color: 'w', at: { x: 100, y: 100 } } });
+  const ctx = recordingCtx();
+  r.tick(0, ctx, 640);
+  const draws = ctx.calls.filter((c) => c[0] === 'drawImage');
+  assert.ok(draws.length > 0);
+  assert.equal(draws[0][1], image);
+  assert.ok(requested.includes('wq'));
+  assert.equal(ctx.calls.filter((c) => c[0] === 'strokeText').length, 0);
+});
+
+test('glyph falls back to the unicode piece glyph when no image is available', () => {
+  const r = new ParticleFxRenderer({ soundOn: false, getPieceImage: () => null });
+  r.play(reFor('q', 'p'));
+  const ctx = recordingCtx();
+  r.tick(0, ctx, 640);
+  assert.ok(ctx.calls.some((c) => c[0] === 'fillText'));
+  assert.equal(ctx.calls.filter((c) => c[0] === 'drawImage').length, 0);
+});

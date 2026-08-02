@@ -28,9 +28,11 @@ export class ParticleFxRenderer {
     soundOn = true,
     buildupMs = 0,      // 0 = instant impact; >0 = crosshair buildup before impact
     routing = null,     // map attacker piece -> effect; null = built-in SIG
-    fallback = 'splatter'
+    fallback = 'splatter',
+    getPieceImage = null // (color, type) => CanvasImageSource|null; real lichess piece art
   } = {}) {
     this.onImpact = onImpact;
+    this.getPieceImage = getPieceImage;
     this.mode = mode;
     this.intensity = Math.max(1, Math.min(10, intensity));
     this.soundOn = soundOn;
@@ -161,6 +163,7 @@ export class ParticleFxRenderer {
     const white = victim.color === 'w';
     return this.addP(Object.assign({
       kind: 'glyph', x: cx, y: cy, mode,
+      pieceColor: victim.color, pieceType: victim.type,
       char: GLYPH[victim.type] || GLYPH.p,
       color: white ? '#f4f3ee' : '#2b2926',
       stroke: Math.max(1, S * 0.022),
@@ -173,6 +176,7 @@ export class ParticleFxRenderer {
     const white = victim.color === 'w';
     return this.addP({
       kind: 'glyphHalf', x: cx, y: cy, half, dirx, diry, rotDeg,
+      pieceColor: victim.color, pieceType: victim.type,
       char: GLYPH[victim.type] || GLYPH.p,
       color: white ? '#f4f3ee' : '#2b2926',
       stroke: Math.max(1, S * 0.022),
@@ -313,17 +317,28 @@ export class ParticleFxRenderer {
     return { sx, sy, dx, dy, rot, a };
   }
 
+  // The real lichess piece image when available; null falls back to the glyph.
+  pieceImageFor(p) {
+    return this.getPieceImage?.(p.pieceColor, p.pieceType) ?? null;
+  }
+
   drawGlyph(p, ctx, t) {
     const tf = this.glyphTransform(p.mode, t, p.S);
     ctx.save();
     ctx.translate(p.x + tf.dx, p.y + tf.dy);
     ctx.rotate(tf.rot); ctx.scale(tf.sx, tf.sy);
     ctx.globalAlpha = Math.max(0, tf.a);
-    ctx.font = `${p.fontPx}px ${GFONT}`;
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     if (p.mode === 'ascension') { ctx.shadowColor = '#ffd86b'; ctx.shadowBlur = 12; }
-    ctx.lineWidth = p.stroke; ctx.strokeStyle = p.strokeColor; ctx.strokeText(p.char, 0, 0);
-    ctx.fillStyle = p.color; ctx.fillText(p.char, 0, 0);
+    const img = this.pieceImageFor(p);
+    if (img) {
+      const side = p.S * 0.9; // lichess pieces nearly fill their square
+      ctx.drawImage(img, -side / 2, -side / 2, side, side);
+    } else {
+      ctx.font = `${p.fontPx}px ${GFONT}`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.lineWidth = p.stroke; ctx.strokeStyle = p.strokeColor; ctx.strokeText(p.char, 0, 0);
+      ctx.fillStyle = p.color; ctx.fillText(p.char, 0, 0);
+    }
     ctx.restore(); ctx.shadowBlur = 0; ctx.globalAlpha = 1;
   }
 
@@ -341,10 +356,16 @@ export class ParticleFxRenderer {
     else ctx.rect(-H, 0, 2 * H, H);
     ctx.clip();
     ctx.globalAlpha = Math.max(0, a);
-    ctx.font = `${p.fontPx}px ${GFONT}`;
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.lineWidth = p.stroke; ctx.strokeStyle = p.strokeColor; ctx.strokeText(p.char, 0, 0);
-    ctx.fillStyle = p.color; ctx.fillText(p.char, 0, 0);
+    const img = this.pieceImageFor(p);
+    if (img) {
+      const side = p.S * 0.9;
+      ctx.drawImage(img, -side / 2, -side / 2, side, side);
+    } else {
+      ctx.font = `${p.fontPx}px ${GFONT}`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.lineWidth = p.stroke; ctx.strokeStyle = p.strokeColor; ctx.strokeText(p.char, 0, 0);
+      ctx.fillStyle = p.color; ctx.fillText(p.char, 0, 0);
+    }
     ctx.restore(); ctx.globalAlpha = 1;
   }
 
