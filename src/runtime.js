@@ -8,6 +8,7 @@ import { resolvePack } from './packs.js';
 import { derivePosition } from './chess-state.js';
 import { detectPatterns } from './patterns.js';
 import { PatternOverlay } from './pattern-overlay.js';
+import { PieceSprites } from './piece-sprites.js';
 
 const PIECE_NAMES = { p: 'Pawn', n: 'Knight', b: 'Bishop', r: 'Rook', q: 'Queen', k: 'King' };
 
@@ -21,7 +22,8 @@ function domToast(doc, text) {
   Object.assign(element.style, {
     position: 'fixed', top: '20px', left: '50%', transform: 'translateX(-50%)',
     zIndex: '99999', background: '#1a1a2e', color: '#ff6b6b',
-    padding: '10px 20px', borderRadius: '8px', border: '2px solid #ff6b6b'
+    padding: '10px 20px', borderRadius: '8px', border: '2px solid #ff6b6b',
+    pointerEvents: 'none'
   });
   doc.body.appendChild(element);
   setTimeout(() => element.remove(), 2000);
@@ -39,6 +41,7 @@ export function createRuntime({
   loc = (typeof location !== 'undefined' ? location : null),
   observerFactory = (cb) => new MutationObserver(cb),
   patternOverlay = new PatternOverlay(),
+  pieceSprites = null,
   derivePositionFn = derivePosition,
   detectPatternsFn = detectPatterns,
   notify
@@ -52,6 +55,7 @@ export function createRuntime({
   let observer = null;
   let lastPatternSig = null;
   let lastSnapshot = null;
+  const sprites = pieceSprites ?? (doc ? new PieceSprites({ document: doc }) : null);
 
   function ensureRenderer() {
     overlay.attach();
@@ -68,6 +72,7 @@ export function createRuntime({
         intensity: settings.intensity,
         soundOn: settings.soundOn,
         buildupMs: settings.buildupMs,
+        getPieceImage: (color, type) => sprites?.get(color, type) ?? null,
         onImpact: (renderEvent, opts) => {
           if (overlay.board && settings.shakePieces.includes(renderEvent?.attacker?.piece)) {
             shakeElement(overlay.board, {
@@ -153,6 +158,9 @@ export function createRuntime({
       observer = observerFactory(scan);
       observer.observe(doc.body, { childList: true, subtree: true });
     }
+    // Preload the active piece-set images so the first capture animation
+    // already renders the real lichess pieces instead of the glyph fallback.
+    sprites?.warm();
     scan();
   }
 

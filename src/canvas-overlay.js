@@ -15,8 +15,7 @@ export class CanvasOverlay {
   }
 
   attach() {
-    this.board = this.document.querySelector('cg-board');
-    if (!this.board) return null;
+    if (!this._ensureBoard()) return null;
 
     this.canvas = this.document.getElementById('lichess-kill-overlay');
 
@@ -24,42 +23,60 @@ export class CanvasOverlay {
       this.canvas = this.document.createElement('canvas');
       this.canvas.id = 'lichess-kill-overlay';
       Object.assign(this.canvas.style, {
-        position: 'fixed',
+        position: 'absolute',
+        left: '0px',
+        top: '0px',
         pointerEvents: 'none',
-        zIndex: '99998'
+        zIndex: '3'
       });
-      this.document.body.appendChild(this.canvas);
-    }
-
-    if (this.ResizeObserver && !this.resizeObserver) {
-      this.resizeObserver = new this.ResizeObserver(() => this.sync());
-      this.resizeObserver.observe(this.board);
     }
 
     this.sync();
     return this.canvas;
   }
 
+  // (Re)acquires cg-board. Lichess recreates the element on board flips,
+  // resizes and SPA navigation — a cached detached node reports a 0x0 rect and
+  // would silently collapse the overlay, so always check isConnected.
+  _ensureBoard() {
+    if (this.board && this.board.isConnected !== false) return this.board;
+    const board = this.document.querySelector('cg-board');
+    if (!board) return null;
+    this.board = board;
+    if (this.ResizeObserver) {
+      this.resizeObserver?.disconnect();
+      this.resizeObserver = new this.ResizeObserver(() => this.sync());
+      this.resizeObserver.observe(board);
+    }
+    return board;
+  }
+
   sync() {
-    if (!this.board) {
-      this.board = this.document.querySelector('cg-board');
+    const board = this._ensureBoard();
+    if (!board || !this.canvas) return null;
+
+    // Mount the canvas next to cg-board inside its container so it inherits the
+    // board's exact position through scrolling, zooming and layout changes.
+    // (cg-container is position:absolute and coincides with cg-board.)
+    const container = board.parentElement;
+    if (container && this.canvas.parentElement !== container) {
+      container.appendChild(this.canvas);
     }
 
-    if (!this.board || !this.canvas) return null;
-
-    const rect = this.board.getBoundingClientRect();
+    const rect = board.getBoundingClientRect();
     const size = rect.width;
     const dpr = this.devicePixelRatio;
 
     Object.assign(this.canvas.style, {
-      left: `${rect.left}px`,
-      top: `${rect.top}px`,
+      left: `${board.offsetLeft || 0}px`,
+      top: `${board.offsetTop || 0}px`,
       width: `${size}px`,
       height: `${size}px`
     });
 
-    this.canvas.width = Math.round(size * dpr);
-    this.canvas.height = Math.round(size * dpr);
+    const bufferSize = Math.round(size * dpr);
+    if (this.canvas.width !== bufferSize) this.canvas.width = bufferSize;
+    if (this.canvas.height !== bufferSize) this.canvas.height = bufferSize;
 
     const context = this.getContext(this.canvas);
     context?.setTransform?.(dpr, 0, 0, dpr, 0, 0);
