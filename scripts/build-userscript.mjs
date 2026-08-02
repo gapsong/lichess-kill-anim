@@ -6,7 +6,7 @@ const GIST_RAW_URL =
 const banner = `// ==UserScript==
 // @name         Lichess Kill Notifier
 // @namespace    dismo/lichess-kill
-// @version      4.3.5
+// @version      4.4.0
 // @description  Killing-Animationen bei Schlagzuegen mit eigenem Chess-State statt fragilem Board-DOM.
 // @author       Dismo
 // @match        https://lichess.org/*
