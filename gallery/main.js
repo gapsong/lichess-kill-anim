@@ -16,6 +16,7 @@ function makeTile(src, alt) {
   img.height = 320;
   img.loading = 'lazy';
   img.decoding = 'async';
+  img.draggable = false;
   return img;
 }
 
