@@ -116,13 +116,52 @@ function drawWood(ctx, size) {
   }
 }
 
-function drawBoard(ctx, size, contextPieces) {
-  drawWood(ctx, size);
+// The animated tiles carry ONLY pieces + effects on a transparent canvas; the
+// wood board ships separately as a lossless PNG (window.__renderBoard) that the
+// gallery layers underneath via CSS. Keeping the static board out of the lossy
+// WebP is what keeps it sharp.
+function drawContextPieces(ctx, size, contextPieces) {
   const sq = size / 8;
   for (const [type, square, color] of contextPieces) {
     const { col, row } = sq2cr(square);
     drawPiece(ctx, type, color, (col + 0.5) * sq, (row + 0.5) * sq, sq);
   }
+}
+
+// Bare board (no pieces) for the static background layer. Both this PNG and the
+// animated overlay are full-bleed 8x8 grids of the same square size, so the
+// gallery can stretch both to the same box and stay grid-aligned.
+window.__renderBoard = function ({ size }) {
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  drawWood(canvas.getContext('2d'), size);
+  return canvas.toDataURL('image/png');
+};
+
+// Alpha quantization before PNG export. img2webp compresses the alpha plane
+// LOSSLESSLY per keyframe; raw particle glows produce near-continuous alpha
+// noise that made transparent tiles ~2.5x heavier than the old opaque ones.
+// Snapping alpha to 16-level steps (invisible over the board — verified
+// side-by-side) halves the encoded size. Pixels below the cull threshold are
+// fully cleared, near-opaque ones snap to 255 so pieces never shimmer.
+const ALPHA_STEP = 16, ALPHA_CULL = 16, ALPHA_OPAQUE = 240;
+
+function quantizeAlpha(canvas, ctx) {
+  const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const d = img.data;
+  for (let i = 3; i < d.length; i += 4) {
+    const a = d[i];
+    if (a === 0) continue;
+    if (a < ALPHA_CULL) { d[i - 3] = 0; d[i - 2] = 0; d[i - 1] = 0; d[i] = 0; continue; }
+    d[i] = a >= ALPHA_OPAQUE ? 255 : (a & ~(ALPHA_STEP - 1)) + ALPHA_STEP / 2;
+  }
+  ctx.putImageData(img, 0, 0);
+}
+
+function exportFrame(canvas, ctx) {
+  quantizeAlpha(canvas, ctx);
+  return canvas.toDataURL('image/png');
 }
 
 let state = null;
@@ -175,7 +214,8 @@ window.__step = function (dt) {
   const s = state;
   s.now += dt;
   const t = s.now - s.cycleStart;
-  drawBoard(s.ctx, s.size, s.sc.context);
+  s.ctx.clearRect(0, 0, s.size, s.size);
+  drawContextPieces(s.ctx, s.size, s.sc.context);
   let cycleDone = false;
 
   if (t < SLIDE_MS) {
@@ -193,7 +233,7 @@ window.__step = function (dt) {
       setupScenario();
     }
   }
-  return { cycleDone, frame: s.canvas.toDataURL('image/png') };
+  return { cycleDone, frame: exportFrame(s.canvas, s.ctx) };
 };
 
 // Pattern-hint tile: static board + drawPatternFx, stepped by the virtual clock.
@@ -206,11 +246,12 @@ window.__initPatternCapture = function ({ fen, themeId, size }) {
   const patterns = detectPatterns(board);
   const theme = PATTERN_THEMES.find((t) => t.id === themeId) || PATTERN_THEMES[0];
 
+  // Transparent piece layer only — the wood board is the gallery's static
+  // background PNG, not part of the animated frames.
   const bg = document.createElement('canvas');
   bg.width = size;
   bg.height = size;
   const bctx = bg.getContext('2d');
-  drawWood(bctx, size);
   for (let r = 0; r < 8; r++) {
     for (let c = 0; c < 8; c++) {
       const cell = board[r][c];
@@ -227,9 +268,10 @@ window.__initPatternCapture = function ({ fen, themeId, size }) {
 window.__stepPattern = function (dt) {
   const s = patternState;
   s.now += dt;
+  s.ctx.clearRect(0, 0, s.size, s.size);
   s.ctx.drawImage(s.bg, 0, 0);
   for (const pattern of s.patterns) drawPatternFx(s.ctx, s.size, pattern, s.now, s.theme, false);
-  return { frame: s.canvas.toDataURL('image/png') };
+  return { frame: exportFrame(s.canvas, s.ctx) };
 };
 
 // Objective centering check: draw each piece alone on a transparent cell,
