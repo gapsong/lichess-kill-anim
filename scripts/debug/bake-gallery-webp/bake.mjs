@@ -1,4 +1,8 @@
 // Bakes every gallery tile to an optimized animated WebP in gallery/webp/.
+// Tiles are LAYERED: the animated WebP holds only pieces + effects on a
+// transparent background; the wood board is baked once as a lossless
+// board.png that the gallery layers underneath via CSS — so the static board
+// never suffers the lossy animation compression and stays sharp.
 // Run from the repo root:  node scripts/debug/bake-gallery-webp/bake.mjs
 // Needs: a chromium binary (set CHROMIUM_BIN if playwright's default is missing)
 // and img2webp from libwebp (Debian/Ubuntu package `webp`). Rebake whenever effects,
@@ -45,9 +49,13 @@ const PATTERNS = [
 // Patterns are purely time-based, so they can simply capture at a lower fps.
 const PACK_SIZE = 320, PACK_FPS = 24, PACK_KEEP_EVERY = 2, MAX_FRAMES = 600;
 const PAT_SIZE = 240, PAT_FPS = 10, PAT_SECONDS = 7;
-// q60 leaves visible temporal ghosting on the wood squares where effects passed;
-// q75 clears it for ~35% more bytes — still far below the old GIF sizes.
+// q75 keeps the piece art clean. (The historic q60-vs-q75 ghosting on the wood
+// squares is gone by construction — the board is no longer in the WebP at all.)
 const WEBP_Q = 75;
+// Static board background, shared by all tiles. Rendered big and lossless so
+// downscaling in the browser stays crisp on retina screens; flat squares
+// compress to a few KB anyway.
+const BOARD_PNG_SIZE = 640;
 
 mkdirSync(outDir, { recursive: true });
 rmSync(tmp, { recursive: true, force: true });
@@ -111,6 +119,12 @@ if (bad.length) {
   console.error(`CENTERING FAIL (> ${CENTER_TOL_PCT}% of cell):`, JSON.stringify(bad));
   process.exit(1);
 }
+
+// Bake the shared static board background (no pieces, lossless PNG).
+const boardPng = await page.evaluate((size) => window.__renderBoard({ size }), BOARD_PNG_SIZE);
+writeFileSync(path.join(outDir, 'board.png'),
+  Buffer.from(boardPng.split(',')[1], 'base64'));
+console.log(`board.png  (${BOARD_PNG_SIZE}px, lossless background layer)`);
 
 function encode(framesDir, fps, out) {
   // -kmax 1 forces every frame to be a full-canvas keyframe. Delta frames (small

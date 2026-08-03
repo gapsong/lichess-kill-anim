@@ -66,6 +66,16 @@ fand das Live-Rendering zu langsam); nach Effekt-/Beispiel-Aenderungen erst
 npm run build:pages   # build:gallery + kopiert dist/gallery/* -> docs/
 ```
 
+**WICHTIG — Tiles sind ZWEISCHICHTIG (Board-PNG + Alpha-WebP):** Das statische
+Schachbrett steckt NICHT im animierten WebP, sondern liegt als verlustfreies
+`webp/board.png` (einmal, 640px, von `bake.mjs` via `__renderBoard` gebacken) als
+CSS-`background-image` auf `.card img`. Das animierte WebP enthaelt nur Figuren +
+Effekte auf transparentem Canvas. Grund: die Lossy-Video-Kompression verwusch frueher
+das ganze Brett (weiche Kanten, Ghosting auf den Holzfeldern). Alignment ist per
+Konstruktion garantiert: beide Layer sind randlose 8x8-Raster und werden im SELBEN
+`img`-Element auf dieselbe Box gestreckt (`background-size: 100% 100%`). Beim Bake nie
+wieder das Brett in die Frames zeichnen — sonst ist die Schaerfe weg.
+
 **WICHTIG — WebP-Tiles muessen All-Keyframe sein:** WebKit/iOS Safari rendert animierte
 WebP mit Delta-Frames (Subrechtecke, der Encoder-Default) falsch — auf dem iPhone
 erscheinen die Tiles gezoomt/verschoben mit Geister-Resten (Blink/Chromium rendert
