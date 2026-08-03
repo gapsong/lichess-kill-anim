@@ -90,11 +90,13 @@
     padding: 12px;
     display: flex; flex-direction: column; gap: 11px;
     box-shadow: 0 1px 2px rgba(58,50,42,0.05);
-    transition: transform .16s ease, border-color .16s ease, box-shadow .16s ease;
+    transition: transform .16s ease, box-shadow .16s ease;
+    /* Pure showcase tiles: nothing on them is clickable or selectable. */
+    -webkit-user-select: none;
+    user-select: none;
   }
   .card:hover {
     transform: translateY(-2px);
-    border-color: var(--accent-soft);
     box-shadow: 0 8px 20px -12px rgba(58,50,42,0.4);
   }
   .card.active {
@@ -105,6 +107,7 @@
     width: 100%; height: auto; aspect-ratio: 1 / 1; display: block;
     border-radius: 9px; background: #d9c4a0;
     box-shadow: inset 0 0 0 1px var(--line-soft);
+    -webkit-user-drag: none;
   }
 
   .meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
