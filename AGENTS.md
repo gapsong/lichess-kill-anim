@@ -76,6 +76,18 @@ per Frame-Decimation (`PACK_KEEP_EVERY` in `bake.mjs` — die Engine muss weiter
 steppen, weil der Partikel-Ausklang pro Tick statt pro Zeit ablaeuft). Nie auf einen
 Delta-Frame-Encoder zurueckwechseln, sonst reisst der iPhone-Bug wieder auf.
 
+**WICHTIG — Figuren in den Tiles: vendored cburnett, massen-zentriert, mit Mess-Gate:**
+Der headless Bake hat kein lichess-CSS, ein Unicode-Glyph-Fallback landet je nach
+Systemfont als "Smiley-Koenig" in den Previews. Deshalb rendert der Bake alle Figuren
+(Brett UND Effekt-intern via `getPieceImage`) aus den vendored lichess-Standard-SVGs
+(`scripts/debug/bake-gallery-webp/pieces/cburnett/`, GPLv2+, siehe README dort) als
+data-URIs (file://-Bilder wuerden das Canvas tainten und `toDataURL` killen).
+Beim Zeichnen wird pro Sprite der einmalig gemessene alpha-gewichtete Pixel-Schwerpunkt
+kompensiert (`drawPiece` in `capture-entry.js`): cburnett-Figuren sind basislastig und
+saessen roh 4-12% der Zelle zu tief, die alten Glyphen sassen 11-18% zu hoch. `bake.mjs`
+misst das bei jedem Lauf und bricht ab, wenn ein Figuren-Schwerpunkt > 5% der Zellgroesse
+von der Zellmitte abweicht — Zahlen stehen im Bake-Log.
+
 Der Install-Link in der Gallery zeigt auf die kanonische Gist-Raw-URL oben — NICHT auf die
 Repo-Raw-URL, denn nur der Gist traegt den `@downloadURL`/`@updateURL`-Banner-Vertrag fuer
 Auto-Updates. `docs/` wird von Pages KOMPLETT oeffentlich serviert — interne Prozess-Docs

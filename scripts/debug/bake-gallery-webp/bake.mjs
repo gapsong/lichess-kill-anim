@@ -6,7 +6,7 @@
 import { chromium } from 'playwright';
 import { build } from 'esbuild';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -69,6 +69,48 @@ const browser = await chromium.launch({
 const page = await browser.newPage();
 page.on('pageerror', (e) => { console.error('PAGE EXCEPTION:', e.message); process.exitCode = 1; });
 await page.goto('file://' + path.join(tmp, 'capture.html'));
+
+// Feed the vendored cburnett SVGs (the lichess default set) into the page as
+// data URIs — data URIs never taint the canvas, and the bake needs no CDN or
+// live lichess page. Every piece in every tile renders from this art; the
+// unicode-glyph path only exists as an emergency fallback and would be a bug
+// if it showed up in output, so a missing sprite is fatal.
+const piecesDir = path.join(here, 'pieces', 'cburnett');
+const spriteMap = {};
+for (const f of readdirSync(piecesDir).filter((n) => n.endsWith('.svg'))) {
+  const key = f[0] + f[1].toLowerCase(); // wK.svg -> 'wk'
+  spriteMap[key] = 'data:image/svg+xml;base64,' +
+    readFileSync(path.join(piecesDir, f)).toString('base64');
+}
+const spriteCount = await page.evaluate((m) => window.__loadSprites(m), spriteMap);
+if (spriteCount !== 12) {
+  console.error(`expected 12 piece sprites, loaded ${spriteCount}`);
+  process.exit(1);
+}
+
+// Centering gate: the alpha-weighted pixel centroid of every piece must sit
+// within 5% of the cell size from the cell center, in x and y. Printed as
+// proof, enforced as a regression guard.
+const CENTER_TOL_PCT = 5;
+const { cell, results } = await page.evaluate(() => window.__measureCentering({ cell: 128 }));
+console.log(`piece centering (centroid offset from cell center, ${cell}px cell):`);
+console.log('piece | glyph dx,dy (px / % cell) | cburnett dx,dy (px / % cell)');
+const byPiece = new Map();
+for (const r of results) {
+  if (!byPiece.has(r.piece)) byPiece.set(r.piece, {});
+  byPiece.get(r.piece)[r.mode] = r;
+}
+for (const [piece, { glyph, sprite }] of byPiece) {
+  const fmt = (r) => r.error ? r.error :
+    `${r.dxPx},${r.dyPx}px / ${r.dxPct},${r.dyPct}%`;
+  console.log(`${piece}    | ${fmt(glyph)} | ${fmt(sprite)}`);
+}
+const bad = results.filter((r) => r.mode === 'sprite' &&
+  (r.error || Math.abs(r.dxPct) > CENTER_TOL_PCT || Math.abs(r.dyPct) > CENTER_TOL_PCT));
+if (bad.length) {
+  console.error(`CENTERING FAIL (> ${CENTER_TOL_PCT}% of cell):`, JSON.stringify(bad));
+  process.exit(1);
+}
 
 function encode(framesDir, fps, out) {
   // -kmax 1 forces every frame to be a full-canvas keyframe. Delta frames (small

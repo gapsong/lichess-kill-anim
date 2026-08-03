@@ -13,6 +13,50 @@ import { drawPatternFx, PATTERN_THEMES } from '../../../src/pattern-art.js';
 const GLYPH = { k: '♚', q: '♛', r: '♜', b: '♝', n: '♞', p: '♟' };
 const GFONT = "'Segoe UI Symbol','Noto Sans Symbols2','Noto Sans Symbols','Apple Symbols','DejaVu Sans',sans-serif";
 
+// Real lichess piece art (cburnett), loaded by bake.mjs as data URIs before any
+// capture starts. Key 'wq', 'bk', ... — same art the live board shows, so the
+// baked tiles match lichess instead of whatever unicode font the headless
+// browser falls back to.
+//
+// Each entry also carries the sprite's alpha-weighted centroid offset as a
+// FRACTION of the sprite box (measured once at load). cburnett pieces are
+// base-heavy: drawn raw at the cell rect their pixel mass sits 4-12% of the
+// cell BELOW the center. drawPiece() shifts by that fraction so the visual
+// mass of every piece lands on the cell center (target: < 5% of the cell).
+const SPRITES = {};
+
+function measureCentroidFraction(img) {
+  const n = 256;
+  const c = document.createElement('canvas');
+  c.width = n;
+  c.height = n;
+  const ctx = c.getContext('2d');
+  ctx.drawImage(img, 0, 0, n, n);
+  const { data } = ctx.getImageData(0, 0, n, n);
+  let m = 0, mx = 0, my = 0;
+  for (let y = 0; y < n; y++) {
+    for (let x = 0; x < n; x++) {
+      const a = data[(y * n + x) * 4 + 3];
+      if (!a) continue;
+      m += a; mx += a * (x + 0.5); my += a * (y + 0.5);
+    }
+  }
+  return { fx: (mx / m - n / 2) / n, fy: (my / m - n / 2) / n };
+}
+
+window.__loadSprites = function (map) {
+  return Promise.all(Object.entries(map).map(([key, dataUri]) => new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => { SPRITES[key] = { img, ...measureCentroidFraction(img) }; resolve(); };
+    img.onerror = () => reject(new Error(`sprite ${key} failed to load`));
+    img.src = dataUri;
+  }))).then(() => Object.keys(SPRITES).length);
+};
+
+function spriteFor(color, type) {
+  return SPRITES[`${color}${type}`]?.img || null;
+}
+
 function sq2cr(s) {
   return { col: s.charCodeAt(0) - 97, row: 8 - Number(s[1]) };
 }
@@ -48,6 +92,20 @@ function drawGlyph(ctx, type, color, x, y) {
   ctx.fillText(GLYPH[type], x, y);
 }
 
+// Draw a piece with its visual mass centered on (x, y) in a cell of `sq` px:
+// the cburnett sprite at full cell size, shifted by its measured centroid
+// fraction so the pixel centroid lands on the cell center. Unicode glyph only
+// as emergency fallback if a sprite failed to load.
+function drawPiece(ctx, type, color, x, y, sq) {
+  const entry = SPRITES[`${color}${type}`];
+  if (entry) {
+    ctx.drawImage(entry.img, x - sq / 2 - entry.fx * sq, y - sq / 2 - entry.fy * sq, sq, sq);
+    return;
+  }
+  pieceFont(ctx, sq);
+  drawGlyph(ctx, type, color, x, y);
+}
+
 function drawWood(ctx, size) {
   const sq = size / 8;
   for (let r = 0; r < 8; r++) {
@@ -61,10 +119,9 @@ function drawWood(ctx, size) {
 function drawBoard(ctx, size, contextPieces) {
   drawWood(ctx, size);
   const sq = size / 8;
-  pieceFont(ctx, sq);
   for (const [type, square, color] of contextPieces) {
     const { col, row } = sq2cr(square);
-    drawGlyph(ctx, type, color, (col + 0.5) * sq, (row + 0.5) * sq);
+    drawPiece(ctx, type, color, (col + 0.5) * sq, (row + 0.5) * sq, sq);
   }
 }
 
@@ -80,7 +137,8 @@ window.__initCapture = function ({ packId, size, scenarioIndices }) {
   const cfg = resolvePack(packId);
   const renderer = new ParticleFxRenderer({
     mode: cfg.mode, routing: cfg.routing, fallback: cfg.fallback,
-    intensity: 6, soundOn: false, buildupMs: 0
+    intensity: 6, soundOn: false, buildupMs: 0,
+    getPieceImage: (color, type) => spriteFor(color, type)
   });
   const list = (scenarioIndices && scenarioIndices.length)
     ? scenarioIndices.map((n) => SCENARIOS[n])
@@ -118,16 +176,15 @@ window.__step = function (dt) {
   s.now += dt;
   const t = s.now - s.cycleStart;
   drawBoard(s.ctx, s.size, s.sc.context);
-  pieceFont(s.ctx, s.sq);
   let cycleDone = false;
 
   if (t < SLIDE_MS) {
-    drawGlyph(s.ctx, s.sc.victim.type, s.sc.victim.color, s.tx, s.ty);
+    drawPiece(s.ctx, s.sc.victim.type, s.sc.victim.color, s.tx, s.ty, s.sq);
     const p = t / SLIDE_MS;
-    drawGlyph(s.ctx, s.sc.attacker.type, s.sc.attacker.color, s.fx + (s.tx - s.fx) * p, s.fy + (s.ty - s.fy) * p);
+    drawPiece(s.ctx, s.sc.attacker.type, s.sc.attacker.color, s.fx + (s.tx - s.fx) * p, s.fy + (s.ty - s.fy) * p, s.sq);
   } else {
     if (!s.fired) { s.renderer.play(fakeEvent(), s.now); s.fired = true; }
-    drawGlyph(s.ctx, s.sc.attacker.type, s.sc.attacker.color, s.tx, s.ty);
+    drawPiece(s.ctx, s.sc.attacker.type, s.sc.attacker.color, s.tx, s.ty, s.sq);
     s.renderer.tick(s.now, s.ctx, s.size);
     if (t > SLIDE_MS + REST_MS && s.renderer.activeCount === 0) {
       s.cycleStart = s.now;
@@ -154,16 +211,12 @@ window.__initPatternCapture = function ({ fen, themeId, size }) {
   bg.height = size;
   const bctx = bg.getContext('2d');
   drawWood(bctx, size);
-  pieceFont(bctx, size / 8);
   for (let r = 0; r < 8; r++) {
     for (let c = 0; c < 8; c++) {
       const cell = board[r][c];
       if (!cell) continue;
       const { x, y } = boardLocalSquareCenter(cell.square, size, false);
-      bctx.fillStyle = cell.color === 'w' ? '#f4f3ee' : '#2b2926';
-      bctx.strokeStyle = cell.color === 'w' ? '#403e39' : '#0d0c0a';
-      bctx.strokeText(GLYPH[cell.type], x, y);
-      bctx.fillText(GLYPH[cell.type], x, y);
+      drawPiece(bctx, cell.type, cell.color, x, y, size / 8);
     }
   }
 
@@ -177,4 +230,47 @@ window.__stepPattern = function (dt) {
   s.ctx.drawImage(s.bg, 0, 0);
   for (const pattern of s.patterns) drawPatternFx(s.ctx, s.size, pattern, s.now, s.theme, false);
   return { frame: s.canvas.toDataURL('image/png') };
+};
+
+// Objective centering check: draw each piece alone on a transparent cell,
+// compute the alpha-weighted centroid of its pixels, and report the offset
+// from the geometric cell center in px and as % of the cell size.
+// mode 'glyph' = the old unicode-text path, 'sprite' = the cburnett path.
+window.__measureCentering = function ({ cell = 128 } = {}) {
+  const canvas = document.createElement('canvas');
+  canvas.width = cell;
+  canvas.height = cell;
+  const ctx = canvas.getContext('2d');
+  const results = [];
+  for (const mode of ['glyph', 'sprite']) {
+    for (const color of ['w', 'b']) {
+      for (const type of ['k', 'q', 'r', 'b', 'n', 'p']) {
+        ctx.clearRect(0, 0, cell, cell);
+        if (mode === 'glyph') {
+          pieceFont(ctx, cell);
+          drawGlyph(ctx, type, color, cell / 2, cell / 2);
+        } else {
+          if (!spriteFor(color, type)) { results.push({ mode, piece: color + type, error: 'sprite missing' }); continue; }
+          drawPiece(ctx, type, color, cell / 2, cell / 2, cell);
+        }
+        const { data } = ctx.getImageData(0, 0, cell, cell);
+        let m = 0, mx = 0, my = 0;
+        for (let y = 0; y < cell; y++) {
+          for (let x = 0; x < cell; x++) {
+            const a = data[(y * cell + x) * 4 + 3];
+            if (!a) continue;
+            m += a; mx += a * (x + 0.5); my += a * (y + 0.5);
+          }
+        }
+        const cxOff = mx / m - cell / 2;
+        const cyOff = my / m - cell / 2;
+        results.push({
+          mode, piece: color + type,
+          dxPx: +cxOff.toFixed(2), dyPx: +cyOff.toFixed(2),
+          dxPct: +(100 * cxOff / cell).toFixed(2), dyPct: +(100 * cyOff / cell).toFixed(2)
+        });
+      }
+    }
+  }
+  return { cell, results };
 };
