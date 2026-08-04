@@ -135,6 +135,19 @@ Auto-Updates. `docs/` wird von Pages KOMPLETT oeffentlich serviert — interne P
 - `gallery/`: statische Galerie-Website; Tiles sind vorgebackene animierte WebP (`gallery/webp/`, erzeugt via `scripts/debug/bake-gallery-webp/bake.mjs` aus der echten Engine — kein Live-Rendering im Browser); Build `npm run build:gallery` → `dist/gallery/`
 - `src/background-entry.js` + `src/background-message.js`: MV3-Service-Worker; empfängt die Pack-Auswahl der Galerie via `externally_connectable` und schreibt `chrome.storage`
 
+**Chrome Web Store Release (`extension/` + `store/`):** `npm run build:ext` bündelt
+`src/extension-entry.js` → `content.js` (dieselbe `createRuntime`-Pipeline wie das
+Userscript), `background-entry.js` → `background.js`, `popup-entry.js` → `popup.js`,
+kopiert `extension/` (manifest, popup.html, icons) nach `dist/extension/` und
+**stempelt die Manifest-Version aus `package.json`** — `package.json` ist die
+EINZIGE Versions-Wahrheit, `extension/manifest.json` wird beim Build überschrieben
+(trotzdem konsistent halten). `npm run package:ext` fügt `--zip` an →
+`dist/lichess-kill-animations-v<version>.zip` (Upload-Artefakt, nie committen). Das
+Manifest fordert nur `storage`, keine Host-Permissions (nur der `lichess.org/*`
+Content-Script-Match), kein Remote-Code. Der Submit-Kit liegt in `store/`
+(`SUBMIT.md`, `listing.md`, `privacy.md`); `store/privacy.md` hat einen
+Kontakt-E-Mail-Platzhalter, den der Captain vor dem Einreichen füllen muss.
+
 ## Animation-System
 
 ### Partikel-Engine (`ParticleFxRenderer`)
@@ -355,8 +368,25 @@ Temporare Browser-Inspektoren:
 
 - `scripts/debug/inspect-lichess-tv.mjs`
 - `scripts/debug/check-userscript-tv.mjs`
+- `scripts/debug/verify-extension-lichess.mjs`: lädt das gebaute `dist/extension` als
+  entpackte MV3-Extension in Chromium, spielt auf `lichess.org/analysis` eine
+  Dame-Schlagpartie und prüft, dass die Kill-Animation feuert; schreibt zusätzlich
+  einen 1280×800 Store-Screenshot nach `dist/store-screenshot-1280x800.png`.
 
 Diese Scripts brauchen einen echten Browser. Sie sind Diagnosewerkzeuge, nicht Teil des normalen Builds.
+
+**Extension auf echtem lichess.org verifizieren (`verify-extension-lichess.mjs`):**
+MV3-Extensions laden NUR in einem VOLLEN Chromium, nicht im `chromium_headless_shell`.
+Also `chromium.launchPersistentContext(dir, { headless: false, args:
+['--disable-extensions-except=<dist/extension>', '--load-extension=<dist/extension>'] })`
+unter `xvfb-run -a` auf einem Server. Der `background`-Service-Worker registriert sich
+sofort (`ctx.serviceWorkers()` → `ext_id`), der Content-Script mountet die Overlays.
+**Gotcha — Overlay ist getaintet:** das Kill-Overlay-Canvas (`#lichess-kill-overlay`,
+lazy in `renderCapture` erzeugt) zeichnet die cross-origin lichess-Figurengrafiken
+(`lichess1.org`-Assets) → `getImageData` wirft SecurityError → Pixel-Sampling meldet
+fälschlich 0. Beweis daher per **Screenshot**, nicht per Pixel-Read. Der Runtime-Toast
+`"<Piece> captures 💥"` + die Existenz von `#lichess-kill-overlay` sind der zuverlässige
+programmatische Nachweis, dass der Capture-Pfad lief.
 
 **Userscript in Playwright auf echtem lichess.org testen:** lichess setzt eine strikte CSP
 (`script-src` ohne `unsafe-inline`), die `page.addScriptTag({ content })` blockiert. Loesung:
