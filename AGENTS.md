@@ -1,17 +1,12 @@
 # Lichess Kill Animations
 
-> ⚠️ **BEFORE PUBLIC RELEASE — fair-play gate (TODO, NOT yet implemented).**
-> The tactical **pattern hints** (pins, forks, hanging pieces, hotspots, "material under
-> pressure", batteries, etc.) count as **outside assistance** during live play. chess.com's
-> Fair Play policy (strictly enforced) and Lichess's fair-play rules both prohibit that in
-> **ranked / rated live games**. The **kill animations are cosmetic and always fine.**
->
-> **Plan (do before shipping publicly / to chess.com):** gate the pattern hints so they run
-> only on **analysis boards, puzzles and game review**, and are **OFF in ranked/live games**.
-> Add a visible user note that the hints are a study aid, off during ranked play.
->
-> **For now (dev phase): intentionally kept ON everywhere** — a known, deliberate temporary
-> state. Remove it before release. Wiring point + TODO: `src/runtime.js` (`renderPatterns`).
+> **Fair-play: cosmetic only (since v1.0.0).** The tactical **pattern hints** were **removed**
+> so the extension is safe to publish. They counted as **outside assistance** under Lichess and
+> chess.com fair-play rules in ranked/live games. The extension now draws **only** the capture
+> kill animations — no position analysis, no move/tactic suggestions. The removed machinery
+> (`src/patterns.js`, `src/pattern-overlay.js`, `src/pattern-art.js`, `derivePosition`, the
+> `patternsOn` toggle, and the gallery pattern tiles) lives in git history if it ever needs to
+> return **gated to analysis/puzzles/review only** (wiring point was `src/runtime.js`).
 
 ## Projektzweck
 
@@ -117,13 +112,8 @@ Auto-Updates. `docs/` wird von Pages KOMPLETT oeffentlich serviert — interne P
 - `src/particle-fx-renderer.js`: Live-Partikel-Engine; zeichnet alle Effekte direkt per Canvas-API (kein Spritesheet); unterstuetzt `buildupMs`-Crosshair vor Impact
 - `src/board-shake.js`: abklingender Screen-Shake auf `cg-board` (Vlambeer-Style), getriggert via `onImpact`
 - `src/userscript-entry.js`: Tampermonkey-Einstieg, Toasts und Canvas-Renderer
-- `src/patterns.js`: erkennt statische Formationen (`detectPatterns(board)` → battery/rooks/pin/skewer/fianchetto/outpost/passed-pawn)
-- `src/pattern-overlay.js`: persistente zweite Canvas-Schicht, zeichnet erkannte Muster (Linie + Glow + Label); Toggle `patternsOn`; trackt pro Pattern (`type|side|squares`) den ersten Sichtungs-Zeitpunkt fuer die Intro/Faint-Lifecycle (`fadeFor`)
-- `src/chess-state.js`: zusätzlich `derivePosition(snapshot)` → Brett an `snapshot.activePly` (auf dem Analyse-Brett der gerade betrachtete Zug, nicht zwingend das Zugende) via `chess.board()`, fuer die Muster-Erkennung
 
-**Wichtig — `activePly` durchgaengig respektieren:** Auf dem Analyse-Brett sind alle Zuege bereits im DOM; `snapshot.activePly` (aus `move.active`) ist der Ply, den der Nutzer gerade ansieht, und kann kleiner sein als `sanMoves.length`. `CaptureEventStream` beruecksichtigt das schon lange. `derivePosition` und `patternSig` (in `src/runtime.js`) muessen das ebenfalls tun — sonst bleiben Pattern-Hints (z. B. eine 4-Felder-Festung) beim Zurueckblaettern auf dem Brett haengen, weil `snapshot.id`/`sanMoves.length` gleich bleiben und die Neuberechnung uebersprungen wird, obwohl die angezeigte Position eine andere ist. Neue Stellen, die Muster oder Captures aus einem `snapshot` ableiten, muessen `activePly` respektieren, sonst reisst dieselbe Bug-Klasse wieder auf.
-
-**Wichtig — Pattern-Hints nur wenn materiell nuetzlich (SEE):** Taktische Hints in `src/patterns.js` sollen nur feuern, wenn sie wirklich etwas gewinnen, nicht bei jeder geometrischen Konstellation. Dafuer gibt es eine wiederverwendbare SEE-Maschinerie (`staticExchange`/`seeGain`, gespeist aus `attackersOf`): der `hotspot` (Brennpunkt) feuert nur bei SEE > 0, und der `skewer` (Spieß) ist ebenso gegated — er feuert nur, wenn die hintere Figur mindestens eine Leichtfigur ist (`VALUE[back] >= 3`, Konstante `SKEWER_MIN_BACK`) UND die SEE auf dem hinteren Feld — nach Entfernen der vorderen Figur aus der `at`-Kopie, damit der Slider durchsieht — fuer die angreifende Seite > 0 ist. Ein Spieß ueber einen (verteidigten) Bauern oder ueber eine verteidigte Figur, bei der der Rueckschlag Material verliert, wird nicht mehr angezeigt. Der `pin`-Zweig (`v2 > v1`) bleibt rein geometrisch. Neue taktische Hints diese SEE-Hebel weiterverwenden statt eigene Heuristiken zu erfinden.
+**Wichtig — `activePly` respektieren:** Auf dem Analyse-Brett sind alle Zuege bereits im DOM; `snapshot.activePly` (aus `move.active`) ist der Ply, den der Nutzer gerade ansieht, und kann kleiner sein als `sanMoves.length`. `CaptureEventStream` beruecksichtigt das. Neue Stellen, die Captures aus einem `snapshot` ableiten, muessen `activePly` ebenfalls respektieren, sonst feuern beim Zurueckblaettern falsche Animationen.
 
 ### Build-Scripts
 
@@ -214,12 +204,6 @@ Effekt per virtueller Uhr ticken, pro Frame alpha-gewichtete Pixel-Zentroide akk
 (Referenz-Harness: PR #18). `splatter` hat hohe Varianz (wenige grosse Blobs dominieren die
 Masse), im Mittel aber zentriert. Neue Effekte gegen diese Invariante messen.
 
-### Intro/Faint-Lifecycle fuer ALLE Pattern-Hints
-
-**Universell (seit v4.3.1):** *Jeder* Pattern-Hint — nicht mehr nur battery/rooks/outpost — spielt beim ersten Erscheinen einen einmaligen starken Intro-Pulse (900ms, `INTRO_MS` in `src/pattern-overlay.js`), danach faellt die Deckkraft auf einen niedrigen Dauerzustand (`STEADY_FADE = 0.16`), solange das Pattern bestehen bleibt ("Pop, dann dezent ausfaden"). `PatternOverlay` trackt dafuer pro Pattern-Key (`type|side|squares`) den ersten Sichtungs-Zeitpunkt (`firstSeen`-Map) und berechnet den Fade-Faktor ueber `fadeFor(pattern, now)` (gilt jetzt fuer alle Typen, kein `FADE_LIFECYCLE_TYPES`-Gate mehr).
-
-**Wie der Fade angewandt wird:** Statt `fade` durch jede einzelne Zeichenfunktion und ihre Helfer zu faedeln (fehleranfaellig — manche Elemente zeichnen auf dem ambienten `globalAlpha`), setzt `_frame` in `src/pattern-overlay.js` pro Pattern die Basis-`globalAlpha` auf den Fade-Wert und wickelt den Context in `scaleAlpha(ctx, fade)` — einen `Proxy`, der *jede* explizite `globalAlpha = x`-Zuweisung zu `x * fade` skaliert und alle anderen Draw-Calls/Methoden unveraendert durchreicht (Canvas-`globalAlpha` ist ein absoluter Wert, nicht additiv). So dimmt der ganze Hint gleichmaessig an genau EINER Stelle; `drawPatternFx` in `src/pattern-art.js` zeichnet immer volle Staerke und muss den Lifecycle nicht kennen (der `fade`-Param dort bleibt fuer Legacy/Direktaufrufer, wird vom Overlay auf 1 gelassen). Verschwindet ein Pattern (nicht mehr in der `render()`-Liste), wird sein `firstSeen`-Eintrag geloescht — erscheint es spaeter erneut, gibt es einen frischen Intro-Pulse.
-
 Bei `routing === null` (Default) wird der Angreifer via `SIG`-Konstante geroutet; Opfer `k` hat Vorrang und liefert immer `ascension`. Die waehlbare Animation steuert `packId` (Registry `src/packs.js`, aufgeloest via `resolvePack`): `single` setzt `mode` auf einen festen Effekt, `theme` setzt `routing`/`fallback`.
 Bei `buildupMs > 0` erscheint zuerst ein Targeting-Reticle auf dem Opfer-Feld; nach Ablauf der Buildup-Zeit wird `fireImpact` aufgerufen und `onImpact` gefeuert (Board-Shake). Default `buildupMs` ist 0.
 
@@ -287,7 +271,7 @@ Wichtig: SAN-Zuege duerfen nicht mit `Set` dedupliziert werden. Dieselbe SAN kan
 
 Wenn keine Zugliste gefunden wird, soll `readSnapshot()` `null` liefern und das Userscript still bleiben.
 
-**Wichtig — `cg-board` ist KEIN stabiler DOM-Knoten:** Lichess erzeugt das `cg-board`-Element bei Board-Flip, Resize und SPA-Navigation neu. Ein gecachter, inzwischen detachter Knoten liefert `getBoundingClientRect()` = 0x0 bei (0,0) — ein Overlay, das darauf synct, kollabiert still auf Groesse 0 und alle Animationen verschwinden bzw. landen falsch. Deshalb pruefen beide Overlays (`CanvasOverlay`, `PatternOverlay`) in `_ensureBoard()` `board.isConnected` und re-queryen + re-observen bei Bedarf. Neue Stellen, die `cg-board` referenzieren, muessen dasselbe tun.
+**Wichtig — `cg-board` ist KEIN stabiler DOM-Knoten:** Lichess erzeugt das `cg-board`-Element bei Board-Flip, Resize und SPA-Navigation neu. Ein gecachter, inzwischen detachter Knoten liefert `getBoundingClientRect()` = 0x0 bei (0,0) — ein Overlay, das darauf synct, kollabiert still auf Groesse 0 und alle Animationen verschwinden bzw. landen falsch. Deshalb prueft das Overlay (`CanvasOverlay`) in `_ensureBoard()` `board.isConnected` und re-queryt + re-observed bei Bedarf. Neue Stellen, die `cg-board` referenzieren, muessen dasselbe tun.
 
 **Wichtig — Overlays leben IM Board-Container, nicht auf `body`:** Die Overlay-Canvases werden als Geschwister von `cg-board` in dessen Parent (`cg-container`, `position:absolute`, deckungsgleich mit dem Brett) gemountet, mit `position:absolute; left/top = offsetLeft/offsetTop`. So folgen sie dem Brett automatisch durch Scroll, Zoom und Layout-Aenderungen. `position:fixed` auf `body` (der fruehere Ansatz) driftet, weil nur der ResizeObserver — nicht Scroll/Relayout — einen Re-Sync ausloest. Alle Overlay-Elemente (auch der Toast `#k-toast`) brauchen `pointer-events: none`, sonst blockieren sie Zuege.
 

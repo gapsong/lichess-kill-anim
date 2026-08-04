@@ -28,8 +28,8 @@ Render kill animations for chess captures on lichess.org. The extension runs onl
 on https://lichess.org/* and does nothing on other sites.
 
 **Permission justification:**
-- `storage`: persist the user's local preferences (enabled, sound, patterns,
-  intensity) via `chrome.storage.sync`. No data leaves the browser.
+- `storage`: persist the user's local preferences (enabled, sound, intensity)
+  via `chrome.storage.sync`. No data leaves the browser.
 
 The manifest declares only the `storage` permission and **no host permissions**;
 the extension reaches lichess pages solely through a content script scoped to

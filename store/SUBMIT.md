@@ -8,21 +8,11 @@ human is your Google account and one screenshot.
 
 ---
 
-## ⚠️ Decide BEFORE you set the listing Public
+## Fair-play: cosmetic only
 
-The extension currently shows **tactical pattern hints** (pins, forks, hanging
-pieces, hotspots…) on **every** page, including ranked/live games. Those count as
-**outside assistance** under Lichess and chess.com fair-play rules. The **kill
-animations themselves are cosmetic and always fine.**
-
-Two options:
-1. **Publish _Unlisted_ now** (share by link only) — fine for testing among people
-   who understand it. Do this to try the whole flow without the fair-play risk.
-2. **Gate the pattern hints off for ranked/live play _before_ going Public**
-   (analysis/puzzles/review only). Wiring point + TODO: `src/runtime.js`
-   (`renderPatterns`). This is a code change, out of scope for this release-prep PR.
-
-Not blocking the upload — just don't flip it to Public with hints on.
+The extension draws **only** the capture kill animations — no tactical/pattern
+hints, no position analysis, no move suggestions. It's purely cosmetic, so it's
+safe to list **Public** under Lichess and chess.com fair-play rules.
 
 ---
 
@@ -39,8 +29,8 @@ Not blocking the upload — just don't flip it to Public with hints on.
    privacy policy. **Add your support email** to `store/privacy.md` first (it ships
    with a `<add your contact email>` placeholder — the store requires a real one).
 5. **Add ONE screenshot** (1280×800 or 640×400) — see below.
-6. **Submit for review** (pick Public or Unlisted per the gate decision above).
-   Review typically takes a few business days.
+6. **Submit for review** (Public or Unlisted — your call). Review typically takes
+   a few business days.
 
 ## The screenshot (the one visual asset)
 

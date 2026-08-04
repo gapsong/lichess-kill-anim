@@ -36,21 +36,3 @@ export function deriveEvents(snapshot) {
 
   return events;
 }
-
-// On the analysis board every move is already in the DOM; `activePly` (set from
-// `move.active`) is the ply the user is currently looking at, which can be earlier
-// than the end of the loaded game. Stop there instead of always replaying to the
-// final move, otherwise pattern hints computed from this position would stay stuck
-// on a resolved position while the user browses backward through the game.
-export function derivePosition(snapshot) {
-  const chess = snapshot.initialFen ? new Chess(snapshot.initialFen) : new Chess();
-  const ply = snapshot.activePly ?? snapshot.sanMoves.length;
-  for (const san of snapshot.sanMoves.slice(0, ply)) {
-    try {
-      chess.move(san);
-    } catch (_error) {
-      break;
-    }
-  }
-  return { board: chess.board(), turn: chess.turn() };
-}

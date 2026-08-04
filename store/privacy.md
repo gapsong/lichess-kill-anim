@@ -3,7 +3,7 @@
 This extension does not collect, transmit, or sell any personal data.
 
 - It runs only on https://lichess.org/*.
-- It stores a small set of preferences (enabled, sound, pattern hints, intensity)
+- It stores a small set of preferences (enabled, sound, intensity)
   via `chrome.storage.sync`. These are kept in your browser and, if you have
   Chrome Sync enabled, synced to your own Google account. They are never sent
   to us or any third party.

@@ -37,7 +37,7 @@ const ctx = await chromium.launchPersistentContext(userDataDir, {
 const out = {
   ext_loaded: false, ext_id: null, injected: false, capture_fired: false,
   toast_seen: false, pixels_drawn: false, overlay_tainted_by_piece_art: false,
-  screenshot: SHOT
+  no_pattern_overlay: false, screenshot: SHOT
 };
 
 try {
@@ -87,6 +87,7 @@ try {
       }
       if (performance.now() - startT < 1600) requestAnimationFrame(loop);
       else resolve({ hasCanvas: !!c, painted, tainted,
+                     patternOverlay: !!document.getElementById('lichess-pattern-overlay'),
                      toast: document.getElementById('k-toast')?.textContent || null });
     }
     requestAnimationFrame(loop);
@@ -95,9 +96,12 @@ try {
   out.capture_fired = r.hasCanvas;
   out.pixels_drawn = r.painted;
   out.overlay_tainted_by_piece_art = r.tainted;
+  // Fair-play: tactical pattern hints were removed, so the pattern overlay must
+  // never mount — not even after Qxe5+ (a check, which used to trigger a hint).
+  out.no_pattern_overlay = !r.patternOverlay;
   if (r.toast) out.toast_seen = r.toast;
 } finally {
-  const ok = out.ext_loaded && out.injected && out.capture_fired && !!out.toast_seen;
+  const ok = out.ext_loaded && out.injected && out.capture_fired && !!out.toast_seen && out.no_pattern_overlay;
   console.log(JSON.stringify({ pass: ok, ...out }, null, 2));
   await ctx.close();
   if (!ok) process.exitCode = 1;
