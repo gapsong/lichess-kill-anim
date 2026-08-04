@@ -1,14 +1,10 @@
 // Deterministic capture harness for baking gallery tiles to animated WebP.
-// Same code paths as the live overlay (ParticleFxRenderer / drawPatternFx), but
-// stepped by an explicit virtual clock instead of requestAnimationFrame, so the
-// baked frames are perfectly smooth no matter how slow toDataURL is.
+// Same code paths as the live overlay (ParticleFxRenderer), but stepped by an
+// explicit virtual clock instead of requestAnimationFrame, so the baked frames
+// are perfectly smooth no matter how slow toDataURL is.
 // Bundled by bake.mjs via esbuild; not loaded by any production build.
 import { ParticleFxRenderer } from '../../../src/particle-fx-renderer.js';
 import { resolvePack } from '../../../src/packs.js';
-import { Chess } from 'chess.js';
-import { detectPatterns } from '../../../src/patterns.js';
-import { boardLocalSquareCenter } from '../../../src/board-geometry.js';
-import { drawPatternFx, PATTERN_THEMES } from '../../../src/pattern-art.js';
 
 const GLYPH = { k: '♚', q: '♛', r: '♜', b: '♝', n: '♞', p: '♟' };
 const GFONT = "'Segoe UI Symbol','Noto Sans Symbols2','Noto Sans Symbols','Apple Symbols','DejaVu Sans',sans-serif";
@@ -165,7 +161,6 @@ function exportFrame(canvas, ctx) {
 }
 
 let state = null;
-let patternState = null;
 
 window.__initCapture = function ({ packId, size, scenarioIndices }) {
   const canvas = document.getElementById('cap');
@@ -234,44 +229,6 @@ window.__step = function (dt) {
     }
   }
   return { cycleDone, frame: exportFrame(s.canvas, s.ctx) };
-};
-
-// Pattern-hint tile: static board + drawPatternFx, stepped by the virtual clock.
-window.__initPatternCapture = function ({ fen, themeId, size }) {
-  const canvas = document.getElementById('cap');
-  canvas.width = size;
-  canvas.height = size;
-  const ctx = canvas.getContext('2d');
-  const board = new Chess(fen).board();
-  const patterns = detectPatterns(board);
-  const theme = PATTERN_THEMES.find((t) => t.id === themeId) || PATTERN_THEMES[0];
-
-  // Transparent piece layer only — the wood board is the gallery's static
-  // background PNG, not part of the animated frames.
-  const bg = document.createElement('canvas');
-  bg.width = size;
-  bg.height = size;
-  const bctx = bg.getContext('2d');
-  for (let r = 0; r < 8; r++) {
-    for (let c = 0; c < 8; c++) {
-      const cell = board[r][c];
-      if (!cell) continue;
-      const { x, y } = boardLocalSquareCenter(cell.square, size, false);
-      drawPiece(bctx, cell.type, cell.color, x, y, size / 8);
-    }
-  }
-
-  patternState = { canvas, ctx, bg, size, patterns, theme, now: 0 };
-  return { patterns: patterns.length };
-};
-
-window.__stepPattern = function (dt) {
-  const s = patternState;
-  s.now += dt;
-  s.ctx.clearRect(0, 0, s.size, s.size);
-  s.ctx.drawImage(s.bg, 0, 0);
-  for (const pattern of s.patterns) drawPatternFx(s.ctx, s.size, pattern, s.now, s.theme, false);
-  return { frame: exportFrame(s.canvas, s.ctx) };
 };
 
 // Objective centering check: draw each piece alone on a transparent cell,

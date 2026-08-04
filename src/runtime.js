@@ -5,9 +5,6 @@ import { createRenderEvent } from './render-event.js';
 import { ParticleFxRenderer } from './particle-fx-renderer.js';
 import { readSnapshot } from './move-feed.js';
 import { resolvePack } from './packs.js';
-import { derivePosition } from './chess-state.js';
-import { detectPatterns } from './patterns.js';
-import { PatternOverlay } from './pattern-overlay.js';
 import { PieceSprites } from './piece-sprites.js';
 
 const PIECE_NAMES = { p: 'Pawn', n: 'Knight', b: 'Bishop', r: 'Rook', q: 'Queen', k: 'King' };
@@ -40,10 +37,7 @@ export function createRuntime({
   doc = (typeof document !== 'undefined' ? document : null),
   loc = (typeof location !== 'undefined' ? location : null),
   observerFactory = (cb) => new MutationObserver(cb),
-  patternOverlay = new PatternOverlay(),
   pieceSprites = null,
-  derivePositionFn = derivePosition,
-  detectPatternsFn = detectPatterns,
   notify
 } = {}) {
   const settings = { ...config, shakePieces: [...(config?.shakePieces ?? [])] };
@@ -53,8 +47,6 @@ export function createRuntime({
   let currentContext = null;
   let currentSize = 0;
   let observer = null;
-  let lastPatternSig = null;
-  let lastSnapshot = null;
   const sprites = pieceSprites ?? (doc ? new PieceSprites({ document: doc }) : null);
 
   function ensureRenderer() {
@@ -114,43 +106,10 @@ export function createRuntime({
     if (renderer?.activeCount) frameRequest = schedule(frame);
   }
 
-  // Includes activePly so browsing backward through an already-loaded analysis
-  // game (same snapshot.id, same move count, only the active move changes)
-  // still recomputes patterns instead of leaving a resolved hint on screen.
-  function patternSig(snapshot) {
-    if (!snapshot) return null;
-    const moves = snapshot.sanMoves || [];
-    const ply = snapshot.activePly ?? moves.length;
-    return `${snapshot.id}|${ply}|${moves[ply - 1] || ''}`;
-  }
-
-  // TODO(before release): gate pattern hints to NON-ranked pages only. Tactical hints count
-  // as "outside assistance" under chess.com/Lichess fair-play rules and must be OFF in
-  // ranked/live games (allowed on analysis boards, puzzles, review). Kept ON now for the dev
-  // phase — deliberate temporary state. See the fair-play note at the top of AGENTS.md.
-  function renderPatterns(snapshot, force) {
-    if (!settings.patternsOn) {
-      patternOverlay.clear();
-      lastPatternSig = null;
-      return;
-    }
-    const sig = patternSig(snapshot);
-    if (!force && sig === lastPatternSig) return;
-    lastPatternSig = sig;
-    if (!snapshot) {
-      patternOverlay.clear();
-      return;
-    }
-    const { board } = derivePositionFn(snapshot);
-    patternOverlay.render(detectPatternsFn(board));
-  }
-
   function scan() {
     const snapshot = readSnapshotFn(doc, loc);
-    lastSnapshot = snapshot;
     const events = stream.next(snapshot);
     events.forEach((event) => renderCapture(event, snapshot?.id));
-    renderPatterns(snapshot, false);
   }
 
   function start() {
@@ -175,9 +134,6 @@ export function createRuntime({
       renderer.intensity = Math.max(1, Math.min(10, settings.intensity));
       renderer.soundOn = settings.soundOn;
       renderer.buildupMs = settings.buildupMs;
-    }
-    if (partial && 'patternsOn' in partial) {
-      renderPatterns(lastSnapshot, true);
     }
   }
 

@@ -5,8 +5,8 @@
 // never suffers the lossy animation compression and stays sharp.
 // Run from the repo root:  node scripts/debug/bake-gallery-webp/bake.mjs
 // Needs: a chromium binary (set CHROMIUM_BIN if playwright's default is missing)
-// and img2webp from libwebp (Debian/Ubuntu package `webp`). Rebake whenever effects,
-// pattern art, or the example FENs in gallery/main.js change, then `npm run build:pages`.
+// and img2webp from libwebp (Debian/Ubuntu package `webp`). Rebake whenever the
+// capture effects change, then `npm run build:pages`.
 import { chromium } from 'playwright';
 import { build } from 'esbuild';
 import { execFileSync } from 'node:child_process';
@@ -22,33 +22,13 @@ const tmp = path.join(here, '.tmp');
 const PACKS = ['signature', 'nuke', 'smash', 'slash', 'zap', 'pixel', 'ascension',
   'splatter', 'inferno', 'vortex', 'shatter', 'void', 'fire', 'arcade'];
 
-// Keep in sync with PATTERN_EXAMPLES in gallery/main.js (slug = label, kebab-cased).
-const PATTERNS = [
-  ['battery', '6k1/8/4p3/3p4/8/3R4/2P2P2/3Q2K1 w - - 0 1'],
-  ['doubled-rooks', '6k1/8/8/3p4/3P4/3R4/8/3R2K1 w - - 0 1'],
-  ['pin', '6k1/8/4n3/8/8/8/B7/6K1 w - - 0 1'],
-  ['skewer', 'k5r1/6p1/4q1P1/8/8/8/B7/6K1 w - - 0 1'],
-  ['fianchetto', '4k3/8/8/6p1/8/6P1/5PBP/6K1 w - - 0 1'],
-  ['outpost', '6k1/8/5p2/3N4/4P3/8/8/6K1 w - - 0 1'],
-  ['passed-pawn', '6k1/8/8/4P3/8/8/8/6K1 w - - 0 1'],
-  ['pawn-chain', '6k1/8/4p3/2p1P3/3P4/2P5/1P6/6K1 w - - 0 1'],
-  ['hotspot', '6k1/8/8/4q3/2N3N1/8/1B5B/6K1 w - - 0 1'],
-  ['open-file', '6k1/8/8/8/8/8/8/4R1K1 w - - 0 1'],
-  ['fortress', '6k1/5ppp/8/8/8/8/5PPP/6K1 w - - 0 1'],
-  ['fork', 'k7/2q1b3/8/3N4/8/8/8/6K1 w - - 0 1'],
-  ['hanging-piece', '6k1/1b6/8/3N4/8/8/8/6K1 w - - 0 1'],
-  ['hanging-pawn', '6k1/8/8/8/8/2p5/2P5/B5K1 w - - 0 1']
-];
-
 // Halved output fps compensates the size cost of all-keyframe encoding (see
 // encode()): full frames are ~4x the bytes of delta frames, half the frames keeps
 // the tiles near their old weight. Packs must still STEP at 24fps — the particle
 // tail winds down per tick, so a lower capture fps stretches the animation in
 // wall time instead of saving frames. Hence: step at PACK_FPS, keep every
 // PACK_KEEP_EVERY-th frame, and double the per-frame duration in the file.
-// Patterns are purely time-based, so they can simply capture at a lower fps.
 const PACK_SIZE = 320, PACK_FPS = 24, PACK_KEEP_EVERY = 2, MAX_FRAMES = 600;
-const PAT_SIZE = 240, PAT_FPS = 10, PAT_SECONDS = 7;
 // q75 keeps the piece art clean. (The historic q60-vs-q75 ghosting on the wood
 // squares is gone by construction — the board is no longer in the WebP at all.)
 const WEBP_Q = 75;
@@ -161,20 +141,6 @@ for (const packId of PACKS) {
   const out = path.join(outDir, `pack-${packId}.webp`);
   encode(dir, PACK_FPS / PACK_KEEP_EVERY, out);
   console.log(`pack-${packId}.webp  (${sink.count} frames, ${(sink.count / (PACK_FPS / PACK_KEEP_EVERY)).toFixed(1)}s)`);
-}
-
-for (const [slug, fen] of PATTERNS) {
-  const dir = path.join(tmp, `pattern-${slug}`);
-  const sink = frameSink(dir);
-  const { patterns } = await page.evaluate((a) => window.__initPatternCapture(a),
-    { fen, themeId: 'classic', size: PAT_SIZE });
-  if (!patterns) { console.error(`pattern-${slug}: NO PATTERNS DETECTED — fix the FEN`); process.exitCode = 1; }
-  for (let i = 0; i < PAT_SECONDS * PAT_FPS; i++) {
-    const { frame } = await page.evaluate((dt) => window.__stepPattern(dt), 1000 / PAT_FPS);
-    sink.save(frame);
-  }
-  encode(dir, PAT_FPS, path.join(outDir, `pattern-${slug}.webp`));
-  console.log(`pattern-${slug}.webp  (${patterns} pattern(s))`);
 }
 
 await browser.close();

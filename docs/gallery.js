@@ -81,24 +81,6 @@
       desc: "Force one single effect for every capture, no matter which piece moves."
     }
   ];
-  var PATTERN_EXAMPLES = [
-    // Note: since the v4.3.5 "bears on the opponent" gate the battery needs a clear
-    // line toward an enemy piece — the old example (own pawn on d4) no longer fires.
-    { label: "Battery", fen: "6k1/8/4p3/3p4/8/3R4/2P2P2/3Q2K1 w - - 0 1" },
-    { label: "Doubled rooks", fen: "6k1/8/8/3p4/3P4/3R4/8/3R2K1 w - - 0 1" },
-    { label: "Pin", fen: "6k1/8/4n3/8/8/8/B7/6K1 w - - 0 1" },
-    { label: "Skewer", fen: "k5r1/6p1/4q1P1/8/8/8/B7/6K1 w - - 0 1" },
-    { label: "Fianchetto", fen: "4k3/8/8/6p1/8/6P1/5PBP/6K1 w - - 0 1" },
-    { label: "Outpost", fen: "6k1/8/5p2/3N4/4P3/8/8/6K1 w - - 0 1" },
-    { label: "Passed pawn", fen: "6k1/8/8/4P3/8/8/8/6K1 w - - 0 1" },
-    { label: "Pawn chain", fen: "6k1/8/4p3/2p1P3/3P4/2P5/1P6/6K1 w - - 0 1" },
-    { label: "Hotspot", fen: "6k1/8/8/4q3/2N3N1/8/1B5B/6K1 w - - 0 1" },
-    { label: "Open file", fen: "6k1/8/8/8/8/8/8/4R1K1 w - - 0 1" },
-    { label: "Fortress", fen: "6k1/5ppp/8/8/8/8/5PPP/6K1 w - - 0 1" },
-    { label: "Fork", fen: "k7/2q1b3/8/3N4/8/8/8/6K1 w - - 0 1" },
-    { label: "Hanging piece", fen: "6k1/1b6/8/3N4/8/8/8/6K1 w - - 0 1" },
-    { label: "Hanging pawn", fen: "6k1/8/8/8/8/2p5/2P5/B5K1 w - - 0 1" }
-  ];
   function makeCard(pack, grid) {
     const card = document.createElement("div");
     card.className = "card";
@@ -134,36 +116,8 @@
   function renderStatus() {
     if (status) status.style.display = "none";
   }
-  function renderPatternSection(panel) {
-    const section = document.createElement("section");
-    const heading = document.createElement("h2");
-    heading.className = "section-title";
-    heading.textContent = "Pattern hints";
-    const desc = document.createElement("p");
-    desc.className = "section-desc";
-    desc.textContent = "On the board, the script highlights tactical and positional formations. Green = your side, red = the opponent.";
-    const grid = document.createElement("div");
-    grid.className = "grid";
-    section.append(heading, desc, grid);
-    panel.appendChild(section);
-    for (const example of PATTERN_EXAMPLES) {
-      const card = document.createElement("div");
-      card.className = "card";
-      const slug = example.label.toLowerCase().replace(/\s+/g, "-");
-      card.appendChild(makeTile(`webp/pattern-${slug}.webp`, `${example.label} pattern hint`));
-      const meta = document.createElement("div");
-      meta.className = "meta";
-      const name = document.createElement("span");
-      name.className = "name";
-      name.textContent = example.label;
-      meta.appendChild(name);
-      card.appendChild(meta);
-      grid.appendChild(card);
-    }
-  }
   async function init() {
     renderPackGroups(content);
-    renderPatternSection(content);
     renderStatus();
   }
   init();

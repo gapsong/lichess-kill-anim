@@ -35,9 +35,6 @@ function baseOpts(doc, overrides = {}) {
     notify() {},
     doc,
     loc: {},
-    patternOverlay: { render() {}, clear() {} },
-    derivePositionFn: () => ({ board: [], turn: 'w' }),
-    detectPatternsFn: () => [],
     ...overrides
   };
 }
@@ -121,65 +118,4 @@ test('applyConfig clamps out-of-range intensity injected past mergeSettings', ()
   assert.equal(renderer.intensity, 10);
   rt.applyConfig({ intensity: -5 });
   assert.equal(renderer.intensity, 1);
-});
-
-test('patterns are rendered on scan when patternsOn is true', () => {
-  const doc = setupDoc();
-  const rendered = [];
-  const fakeOverlay = { render: (ps) => rendered.push(ps), clear() {} };
-  const sentinel = [{ type: 'battery', side: 'w', squares: ['d1'], line: null, label: 'Batterie' }];
-  const rt = createRuntime(baseOpts(doc, {
-    createRenderer: (opts) => ({ ...opts, activeCount: 0, play() {}, tick() {} }),
-    patternOverlay: fakeOverlay,
-    derivePositionFn: () => ({ board: [], turn: 'w' }),
-    detectPatternsFn: () => sentinel
-  }));
-  rt.start();
-  assert.equal(rendered.length, 1);
-  assert.deepEqual(rendered[0], sentinel);
-});
-
-test('regression: a pattern hint (e.g. the 4-square king fortress) clears once its ply is navigated past, even though snapshot.id and move count stay the same', () => {
-  const doc = setupDoc();
-  const rendered = [];
-  const fakePatternOverlay = { render: (ps) => rendered.push(ps), clear() {} };
-  const fortress = [{ type: 'fortress', side: 'w', squares: ['g1', 'f2', 'g2', 'h2'], line: null, label: 'Festung' }];
-  // Simulates the analysis board: the full game is already loaded in the DOM
-  // (constant id / move count), only the active ply the user is looking at changes.
-  let snapshot = { id: 's1', sanMoves: ['O-O', 'e5', 'g4'], activePly: 1 };
-  let scan;
-  const rt = createRuntime(baseOpts(doc, {
-    createRenderer: (opts) => ({ ...opts, activeCount: 0, play() {}, tick() {} }),
-    patternOverlay: fakePatternOverlay,
-    readSnapshotFn: () => snapshot,
-    observerFactory: (cb) => { scan = cb; return { observe() {}, disconnect() {} }; },
-    // Stand-in for derivePosition + detectPatterns: the fortress is intact through
-    // ply 2, then g4 (ply 3) pushes the g-pawn and breaks it.
-    derivePositionFn: (snap) => ({ board: { ply: snap.activePly }, turn: 'w' }),
-    detectPatternsFn: (board) => (board.ply <= 2 ? fortress : [])
-  }));
-
-  rt.start();
-  assert.deepEqual(rendered.at(-1), fortress);
-
-  snapshot = { ...snapshot, activePly: 3 };
-  scan();
-  assert.deepEqual(rendered.at(-1), []);
-});
-
-test('patterns are cleared (not rendered) when patternsOn is false', () => {
-  const doc = setupDoc();
-  let cleared = 0;
-  const rendered = [];
-  const fakeOverlay = { render: (ps) => rendered.push(ps), clear: () => { cleared++; } };
-  const rt = createRuntime(baseOpts(doc, {
-    config: { ...DEFAULT_SETTINGS, patternsOn: false },
-    createRenderer: (opts) => ({ ...opts, activeCount: 0, play() {}, tick() {} }),
-    patternOverlay: fakeOverlay,
-    derivePositionFn: () => ({ board: [], turn: 'w' }),
-    detectPatternsFn: () => [{ type: 'battery', side: 'w', squares: ['d1'], line: null, label: 'Batterie' }]
-  }));
-  rt.start();
-  assert.equal(rendered.length, 0);
-  assert.ok(cleared >= 1);
 });

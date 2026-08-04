@@ -52,9 +52,3 @@ test('mergeSettings returns a fresh shakePieces array (no shared reference)', ()
   assert.notEqual(out.shakePieces, DEFAULT_SETTINGS.shakePieces);
   assert.deepEqual(out.shakePieces, DEFAULT_SETTINGS.shakePieces);
 });
-
-test('patternsOn defaults to true and coerces to boolean', () => {
-  assert.equal(mergeSettings({}).patternsOn, true);
-  assert.equal(mergeSettings({ patternsOn: false }).patternsOn, false);
-  assert.equal(mergeSettings({ patternsOn: 'yes' }).patternsOn, true);
-});

@@ -1,8 +1,7 @@
 # Lichess Kill Animations
 
 Visual enhancements for chess on **lichess.org**: punchy particle **kill animations** on every
-capture, plus animated **pattern hints** that highlight tactical and positional formations on
-the board. Ships as a **Chrome extension** and as a **Tampermonkey userscript** — both render on
+capture. Ships as a **Chrome extension** and as a **Tampermonkey userscript** — both render on
 a dedicated overlay canvas above `cg-board`, without ever touching Lichess's own piece elements.
 
 > **Unofficial.** This is an independent add-on. It is **not affiliated with, endorsed by, or
@@ -17,22 +16,6 @@ a dedicated overlay canvas above `cg-board`, without ever touching Lichess's own
   with the *captured* piece's material value too, independent of the attacker: taking a queen spawns
   noticeably more/bigger particles and a harder, longer board shake than taking a pawn or minor
   piece, so a queen kill reads as the clear crescendo of the game.
-- **Pattern hints** — the position is analysed live and matching formations are highlighted with
-  an animated effect (green = your side, red = the opponent). Hints stay tied to whichever position
-  you're actually looking at, including when scrubbing back through an analysis board, and clear as
-  soon as their triggering formation is no longer on the board:
-
-  | | | |
-  |---|---|---|
-  | Battery | Connected/doubled rooks | Pin |
-  | Skewer | Fianchetto | Outpost |
-  | Passed pawn | Pawn chain | Hotspot (square under heavy fire) |
-  | Open file | King fortress | Fork |
-  | Hanging piece or pawn (subtlest hint) | | |
-
-  Battery, connected rooks and outpost play one strong intro pulse the moment they appear, then
-  settle to a faint, low-opacity reminder for as long as the formation stays on the board — so a
-  long-lived positional feature doesn't keep flashing at full strength move after move.
 
 ## Install
 
@@ -45,8 +28,8 @@ npm run build:ext      # -> dist/extension/
 
 1. Open `chrome://extensions`, enable **Developer mode**.
 2. **Load unpacked** → select `dist/extension/`.
-3. Open https://lichess.org and play. Click the toolbar icon to toggle effects, sound, intensity,
-   and pattern hints. (Also works in Edge/Brave.)
+3. Open https://lichess.org and play. Click the toolbar icon to toggle effects, sound, and
+   intensity. (Also works in Edge/Brave.)
 
 A hosted Web Store build is not published yet — see `store/SUBMIT.md`.
 
@@ -70,7 +53,7 @@ repeat the copy-paste manually for future updates.
 
 ## Animation gallery
 
-A static showcase site previews every animation and pattern effect as pre-baked animated WebP
+A static showcase site previews every animation as pre-baked animated WebP
 tiles — rendered once from the real engine (`scripts/debug/bake-gallery-webp/`), so the page
 itself does zero per-frame JavaScript.
 
@@ -92,21 +75,17 @@ node scripts/debug/bake-gallery-webp/bake.mjs   # rebake gallery/webp/ after eff
 ## How it works
 
 ```
-Lichess DOM ─ MoveFeed ─ chess.js ─┬─ CaptureEvent ─ RenderEvent ─ ParticleFxRenderer  (kill animations)
-                                   └─ derivePosition ─ detectPatterns ─ PatternOverlay  (pattern hints)
+Lichess DOM ─ MoveFeed ─ chess.js ─ CaptureEvent ─ RenderEvent ─ ParticleFxRenderer  (kill animations)
 ```
 
 - **chess.js** is the single source of truth for chess logic (captures, en passant, the full board).
-- **`detectPatterns(board)`** is a set of pure functions over the position — no engine, just static
-  formation rules — so the same code runs in the live overlay and the gallery.
-- **ParticleFxRenderer** draws live particle effects; **PatternOverlay** runs a second persistent
-  canvas that animates the detected patterns. Both are board-local and orientation-aware.
+- **ParticleFxRenderer** draws the live particle effects, board-local and orientation-aware.
 - The board DOM is used only for geometry and the move list. No Lichess piece elements are modified.
 
 ## Development
 
 ```bash
-npm test                                   # node:test, 128 tests
+npm test                                   # node:test, 88 tests
 npm run build && node --check lichess-kill-notifier.user.js
 npm run build:ext
 npm run build:gallery
@@ -117,21 +96,18 @@ Source lives in `src/`; the three builds bundle it (including `chess.js`) via es
 | File | Purpose |
 |------|---------|
 | `src/move-feed.js` | Reads the SAN move list + active ply from the Lichess DOM |
-| `src/chess-state.js` | `deriveEvents` (captures) and `derivePosition` (board at `activePly`, or the final move) via chess.js |
+| `src/chess-state.js` | `deriveEvents` (captures) via chess.js |
 | `src/event-stream.js` | Deduplicates capture events; tracks the active ply on analysis |
 | `src/board-geometry.js` | Converts squares to board-local pixel coordinates |
 | `src/canvas-overlay.js` | Manages the `#lichess-kill-overlay` (effect) canvas |
 | `src/particle-fx-renderer.js` | Live particle engine; signature routing; WebAudio SFX; crosshair buildup; scales count/size/shake by the captured piece's material value (`victimDrama`) |
 | `src/board-shake.js` | Vlambeer-style screen shake, triggered via `onImpact` |
-| `src/patterns.js` | `detectPatterns(board)` → the 12 static formations |
-| `src/pattern-art.js` | Shared animated highlight drawing (per-pattern bespoke FX + themes); accepts a `fade` multiplier for the intro/steady-state lifecycle |
-| `src/pattern-overlay.js` | Persistent `#lichess-pattern-overlay` canvas that animates patterns; tracks per-pattern first-seen time for the intro/faint lifecycle |
 | `src/packs.js` | Registry of selectable animations (signature / single / theme) |
-| `src/settings.js` | Default settings + validation (`enabled`, `packId`, `intensity`, `soundOn`, `patternsOn`, …) |
-| `src/runtime.js` | Wires move feed → renderer + pattern overlay; shared by both entries |
+| `src/settings.js` | Default settings + validation (`enabled`, `packId`, `intensity`, `soundOn`, …) |
+| `src/runtime.js` | Wires move feed → renderer; shared by both entries |
 | `src/userscript-entry.js` | Tampermonkey entry point |
 | `src/extension-entry.js`, `src/popup-entry.js`, `src/background-*.js` | Chrome extension content script, popup, and service worker |
-| `gallery/` | Static animation/pattern showcase site |
+| `gallery/` | Static animation showcase site |
 
 ## License
 
