@@ -17,6 +17,16 @@
 > or widen the allowlist to game pages** without the captain's explicit sign-off — that would
 > re-introduce a bannable fair-play violation and break the store listing's cosmetic-only claim.
 > The kill animations themselves stay enabled everywhere (pure reaction to moves already made).
+>
+> **Goal panel (since v1.2.0 / userscript 4.6.0) — the SECOND analysis feature,
+> HARD-GATED the same way.** It prints 0–3 short imperative German objectives derived
+> from hard position metrics (castling race, material, loose enemy piece, open file, 7th
+> rank, passed pawns, development lead, king activation, connected rooks, plus a small
+> opening-plan lookup). This is move/tactic guidance = outside assistance — the strongest
+> yet — so it obeys the SAME gate as the undefended overlay: `src/play-context.js`
+> allowlist only, **never** on a live game page, **OFF by default** in the extension (popup
+> toggle `showGoals`), **ON** only in the userscript. Same sign-off rule: do NOT ungate,
+> default-on in the extension, or widen the allowlist without the captain's explicit approval.
 
 ## Projektzweck
 
@@ -123,7 +133,10 @@ Auto-Updates. `docs/` wird von Pages KOMPLETT oeffentlich serviert — interne P
 - `src/board-shake.js`: abklingender Screen-Shake auf `cg-board` (Vlambeer-Style), getriggert via `onImpact`
 - `src/undefended.js`: **reine** Schachlogik — `findUndefended(chess, myColor)` liefert die ungedeckten Figuren (via `chess.attackers(sq, color)`); FEN-unittestbar, keine DOM/Canvas-Abhaengigkeit
 - `src/undefended-layer.js`: eigener Marker-Canvas (`CanvasOverlay`), zeichnet die Marker (own=rote Ecken, enemy=cyan Ring)
-- `src/play-context.js`: Fair-Play-Gate `isAssistSafeContext(location)` — Allowlist der erlaubten Kontexte
+- `src/goals.js`: **reine** Regel-Engine — `deriveGoals(chess, myColor)` leitet 0–3 harte Ziele aus der Stellung ab (nur Position + `chess.history()`, keine Engine/Bewertung); baut auf `findUndefended` auf; FEN-unittestbar
+- `src/openings.js`: `detectOpening(sanMoves)` — kleine Lookup-Tabelle gaengiger Eroeffnungen mit je einem Standard-Plan (nur der besitzenden Seite)
+- `src/goal-panel.js`: Text-HUD (`GoalPanel`, fixes Eck-Panel im Neon-Look, `pointer-events:none`), `render(goals)`/`clear()`
+- `src/play-context.js`: Fair-Play-Gate `isAssistSafeContext(location)` — Allowlist der erlaubten Kontexte (gilt fuer Undefended-Overlay UND Goal-Panel)
 - `src/userscript-entry.js`: Tampermonkey-Einstieg, Toasts und Canvas-Renderer
 
 **Wichtig — `activePly` respektieren:** Auf dem Analyse-Brett sind alle Zuege bereits im DOM; `snapshot.activePly` (aus `move.active`) ist der Ply, den der Nutzer gerade ansieht, und kann kleiner sein als `sanMoves.length`. `CaptureEventStream` beruecksichtigt das. Neue Stellen, die Captures aus einem `snapshot` ableiten, muessen `activePly` ebenfalls respektieren, sonst feuern beim Zurueckblaettern falsche Animationen.
@@ -154,6 +167,31 @@ Userscript ON.
   Struktur bauen, nicht parallel.
 - **Grenze:** `readSnapshot()` liefert `null` ohne Zugliste — auf einem frisch aus FEN
   geladenen Analyse-Brett *ohne* gespielten Zug erscheinen darum (noch) keine Marker.
+
+### Ziel-Panel (Goal Hints)
+
+Druckt 0–3 kurze, imperative deutsche Ziele aus **harten** Stellungsmetriken —
+keine Engine, keine Bewertungsfunktion, jede Regel von Hand nachrechenbar. Fair-Play
+wie oben: **hart gegated** ueber `src/play-context.js`, Extension default OFF
+(Popup-Toggle `showGoals`), Userscript ON. Anzeige als Text-HUD (`GoalPanel`), nicht
+board-aligned (deshalb `position:fixed`-Eck-Panel wie der Toast, nicht ein Canvas-Overlay).
+
+- **`deriveGoals(chess, myColor)` ist rein und nimmt NUR die Stellung.** Rochade wird
+  aus der Koenigsposition (g/c-Linie) statt aus der Zughistorie erkannt, damit es am
+  Analyse-Brett auf jedem Ply UND bei Puzzle-FENs ohne Vorgeschichte stimmt.
+  `chess.history()` (aus `positionAt`) liefert die SAN-Liste fuer die Eroeffnungs-Erkennung;
+  `chess.getCastlingRights` fuer „rochiere jetzt“.
+- **Regeln = Liste kleiner Funktionen (`RULES`), Open/Closed.** Jede liefert
+  `{id,text,priority}` oder `null`. Prioritaetsbaender: 0–9 taktisch (haengende Figur),
+  10–29 strategisch, 30+ Eroeffnung. Sortiert, gekappt auf `MAX_GOALS = 3` → taktisch vor
+  strategisch vor Eroeffnungsplan. Feuert nichts, bleibt das Panel leer (keine erfundenen Ziele).
+- **Wiederverwendung statt Neubau:** die taktische „haengende Figur“-Regel filtert die
+  `findUndefended`-Karte (Reuse des Undefended-Layers). Einzige dokumentierte v1-Ausnahme:
+  ein Turm auf seinem Heimat-Eckfeld (a1/h1/a8/h8) wird NICHT als Ziel gemeldet — die Karte
+  markiert ihn ab Zug 1 als ungedeckt, ein Eck-Turm ist aber kein echtes Angriffsziel.
+- **`updateGoals()` in `runtime.js`** spiegelt exakt `updateUndefended()`: gleiche Gate-
+  Bedingungen und dieselbe Change-Detection-Signatur (`snapshot.id|ply|orientation`).
+  Neue Ziel-Regeln in `src/goals.js`, nicht in die Runtime.
 
 ### Build-Scripts
 

@@ -53,6 +53,12 @@ test('showUndefended defaults off and accepts a real boolean', () => {
   assert.equal(mergeSettings({ showUndefended: 'yes' }).showUndefended, false);
 });
 
+test('showGoals defaults off and accepts a real boolean', () => {
+  assert.equal(mergeSettings({}).showGoals, false);
+  assert.equal(mergeSettings({ showGoals: true }).showGoals, true);
+  assert.equal(mergeSettings({ showGoals: 'yes' }).showGoals, false);
+});
+
 test('mergeSettings returns a fresh shakePieces array (no shared reference)', () => {
   const out = mergeSettings({});
   assert.notEqual(out.shakePieces, DEFAULT_SETTINGS.shakePieces);

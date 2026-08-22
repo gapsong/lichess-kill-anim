@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Lichess Kill Notifier
 // @namespace    dismo/lichess-kill
-// @version      4.5.0
+// @version      4.6.0
 // @description  Killing-Animationen bei Schlagzuegen mit eigenem Chess-State statt fragilem Board-DOM.
 // @author       Dismo
 // @match        https://lichess.org/*
@@ -4764,6 +4764,384 @@
     return undefended;
   }
 
+  // src/openings.js
+  var normalise = (san) => String(san).replace(/[+#!?]/g, "");
+  function movesOf(sanMoves, color, count) {
+    const start = color === "w" ? 0 : 1;
+    const out = [];
+    for (let i = start; i < sanMoves.length && out.length < count; i += 2) out.push(sanMoves[i]);
+    return out;
+  }
+  var startsWith = (moves, prefix) => prefix.every((san, i) => moves[i] === san);
+  function earlyMovesInclude(sanMoves, color, needed, within) {
+    const played = new Set(movesOf(sanMoves, color, within));
+    return needed.every((san) => played.has(san));
+  }
+  var OPENINGS = [
+    {
+      id: "sicilian",
+      name: "Sizilianisch",
+      specificity: 2,
+      match: (m) => startsWith(m, ["e4", "c5"]),
+      plans: { b: "Sizilianisch: setz den ...d5-Vorsto\xDF durch und halte den d6-Bauern gedeckt." }
+    },
+    {
+      id: "french",
+      name: "Franz\xF6sisch",
+      specificity: 2,
+      match: (m) => startsWith(m, ["e4", "e6"]),
+      plans: { b: "Franz\xF6sisch: spreng das Zentrum mit ...c5 und aktiviere den wei\xDFfeldrigen L\xE4ufer." }
+    },
+    {
+      id: "caro-kann",
+      name: "Caro-Kann",
+      specificity: 2,
+      match: (m) => startsWith(m, ["e4", "c6"]),
+      plans: { b: "Caro-Kann: setz ...d5 durch und entwickle den wei\xDFfeldrigen L\xE4ufer vor ...e6." }
+    },
+    {
+      id: "italian",
+      name: "Italienisch",
+      specificity: 5,
+      match: (m) => startsWith(m, ["e4", "e5", "Nf3", "Nc6", "Bc4"]),
+      plans: { w: "Italienisch: ziel auf f7 und bereite mit c3 und d4 das Zentrum vor." }
+    },
+    {
+      id: "ruy-lopez",
+      name: "Spanisch",
+      specificity: 5,
+      match: (m) => startsWith(m, ["e4", "e5", "Nf3", "Nc6", "Bb5"]),
+      plans: { w: "Spanisch: erh\xF6he den Druck auf e5 und c6; bereite c3\u2013d4 und den L\xE4uferr\xFCckzug nach c2." }
+    },
+    {
+      id: "queens-gambit",
+      name: "Damengambit",
+      specificity: 3,
+      match: (m) => startsWith(m, ["d4", "d5", "c4"]),
+      plans: { w: "Damengambit: setz Druck auf d5; bereite e4 oder den Minorit\xE4tsangriff mit b4\u2013b5 vor." }
+    },
+    {
+      id: "london",
+      name: "London-System",
+      specificity: 2,
+      // Move-order independent: an early d4 plus Bf4 (can even start 1.Nf3), and
+      // no c4 (that would be a Queen's-Gambit-style opening instead).
+      match: (m) => earlyMovesInclude(m, "w", ["d4", "Bf4"], 3) && !earlyMovesInclude(m, "w", ["c4"], 3),
+      plans: { w: "London-System: halte die Bf4-Struktur; ziel auf c3, e3, Sbd2 und den Vorsto\xDF Se5." }
+    }
+  ];
+  function detectOpening(sanMoves) {
+    if (!Array.isArray(sanMoves) || sanMoves.length < 2) return null;
+    const moves = sanMoves.map(normalise);
+    let best = null;
+    for (const opening of OPENINGS) {
+      if (opening.match(moves) && (!best || opening.specificity > best.specificity)) best = opening;
+    }
+    return best ? { id: best.id, name: best.name, plans: best.plans } : null;
+  }
+
+  // src/goals.js
+  var MAX_GOALS = 3;
+  var VALUES = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 0 };
+  var LOOSE_PIECE_PHRASE = {
+    n: "den ungedeckten Springer",
+    b: "den ungedeckten L\xE4ufer",
+    r: "den ungedeckten Turm",
+    q: "die ungedeckte Dame"
+  };
+  function deriveGoals(chess, myColor) {
+    const ctx = buildContext(chess, myColor);
+    const goals = [];
+    for (const rule of RULES) {
+      const goal = rule(ctx);
+      if (goal) goals.push(goal);
+    }
+    goals.sort((a, b) => a.priority - b.priority);
+    return goals.slice(0, MAX_GOALS);
+  }
+  function buildContext(chess, myColor) {
+    const enemyColor = myColor === "w" ? "b" : "w";
+    const pieces = [];
+    for (const row of chess.board()) {
+      for (const piece of row) if (piece) pieces.push(piece);
+    }
+    const kingSquare = {
+      w: pieces.find((p) => p.type === "k" && p.color === "w")?.square,
+      b: pieces.find((p) => p.type === "k" && p.color === "b")?.square
+    };
+    return {
+      chess,
+      myColor,
+      enemyColor,
+      pieces,
+      occupied: new Map(pieces.map((p) => [p.square, p])),
+      fullmove: chess.moveNumber(),
+      history: chess.history(),
+      // SAN played to reach this position (opening layer)
+      kingSquare,
+      // Position-only castling detection: a king on its short/long castled square.
+      // Derived from the board rather than move history, so it is correct on the
+      // analysis board at any ply AND on puzzles that start mid-game from a FEN.
+      castled: {
+        w: kingSquare.w === "g1" || kingSquare.w === "c1",
+        b: kingSquare.b === "g8" || kingSquare.b === "c8"
+      },
+      castlingRights: { w: chess.getCastlingRights("w"), b: chess.getCastlingRights("b") },
+      // Reuse the undefended-piece map (the layer this feature builds on): pieces
+      // covered by no same-coloured piece, labelled own (danger) / enemy (chance).
+      undefended: findUndefended(chess, myColor),
+      material: {
+        [myColor]: countMaterial(pieces, myColor),
+        [enemyColor]: countMaterial(pieces, enemyColor)
+      }
+    };
+  }
+  function countMaterial(pieces, color) {
+    let sum = 0;
+    for (const p of pieces) if (p.color === color) sum += VALUES[p.type];
+    return sum;
+  }
+  var MATERIAL_MARGIN = 2;
+  function ruleMaterial(ctx) {
+    const diff = ctx.material[ctx.myColor] - ctx.material[ctx.enemyColor];
+    if (diff >= MATERIAL_MARGIN) {
+      return {
+        id: "material-trade-ahead",
+        text: "Du liegst vorne: Tausche Figuren, nicht Bauern.",
+        priority: 12
+      };
+    }
+    if (diff <= -MATERIAL_MARGIN) {
+      return {
+        id: "material-trade-behind",
+        text: "Du liegst zur\xFCck: Vermeide Figurentausch, tausche eher Bauern.",
+        priority: 12
+      };
+    }
+    return null;
+  }
+  var HOME_ROOKS = { w: /* @__PURE__ */ new Set(["a1", "h1"]), b: /* @__PURE__ */ new Set(["a8", "h8"]) };
+  function ruleAttackUndefended(ctx) {
+    const targets = ctx.undefended.filter(
+      (p) => p.side === "enemy" && p.type in LOOSE_PIECE_PHRASE && !(p.type === "r" && HOME_ROOKS[ctx.enemyColor].has(p.square))
+    );
+    if (targets.length === 0) return null;
+    const best = targets.reduce((a, b) => VALUES[b.type] > VALUES[a.type] ? b : a);
+    return {
+      id: "attack-undefended",
+      text: `Greif ${LOOSE_PIECE_PHRASE[best.type]} auf ${best.square} an.`,
+      priority: 5
+    };
+  }
+  function ruleRookOpenFile(ctx) {
+    const myRooks = ctx.pieces.filter((p) => p.type === "r" && p.color === ctx.myColor);
+    if (myRooks.length === 0) return null;
+    const myPawnFiles = pawnFiles(ctx, ctx.myColor);
+    const enemyPawnFiles = pawnFiles(ctx, ctx.enemyColor);
+    const rookFiles = new Set(myRooks.map((r) => fileOf(r.square)));
+    let open = null;
+    let half = null;
+    for (const f of FILES) {
+      if (rookFiles.has(f)) continue;
+      const mine = myPawnFiles.has(f);
+      const theirs = enemyPawnFiles.has(f);
+      if (!mine && !theirs) open ??= f;
+      else if (!mine && theirs) half ??= f;
+    }
+    const target = open ?? half;
+    if (!target) return null;
+    return {
+      id: "rook-open-file",
+      text: `Bring einen Turm auf die ${open ? "offene" : "halboffene"} ${target}-Linie.`,
+      priority: 16
+    };
+  }
+  function ruleRookSeventh(ctx) {
+    const rooks = ctx.pieces.filter((p) => p.type === "r" && p.color === ctx.myColor);
+    if (rooks.length === 0) return null;
+    const seventh = ctx.myColor === "w" ? 7 : 2;
+    const onSeventh = rooks.some((r) => rankOf(r.square) === seventh);
+    if (onSeventh) {
+      if (rooks.length < 2) return null;
+      return { id: "rook-seventh", text: "Verdopple die T\xFCrme auf der 7. Reihe.", priority: 15 };
+    }
+    if (rooks.some((r) => rookCanReachRank(ctx, r.square, seventh))) {
+      return { id: "rook-seventh", text: "Bring einen Turm auf die 7. Reihe.", priority: 17 };
+    }
+    return null;
+  }
+  function ruleConnectRooks(ctx) {
+    if (!ctx.castled[ctx.myColor]) return null;
+    if (minorsOnHome(ctx, ctx.myColor) > 0) return null;
+    const rooks = ctx.pieces.filter((p) => p.type === "r" && p.color === ctx.myColor);
+    if (rooks.length < 2) return null;
+    if (rooksConnected(ctx, rooks)) return null;
+    return { id: "connect-rooks", text: "Verbinde die T\xFCrme auf der Grundreihe.", priority: 20 };
+  }
+  function minorsOnHome(ctx, color) {
+    let count = 0;
+    for (const p of ctx.pieces) {
+      if ((p.type === "n" || p.type === "b") && p.color === color && MINOR_HOME[color].has(p.square)) {
+        count += 1;
+      }
+    }
+    return count;
+  }
+  function rooksConnected(ctx, rooks) {
+    for (let i = 0; i < rooks.length; i += 1) {
+      for (let j = i + 1; j < rooks.length; j += 1) {
+        if (spanBetweenEmpty(ctx, rooks[i].square, rooks[j].square)) return true;
+      }
+    }
+    return false;
+  }
+  function spanBetweenEmpty(ctx, a, b) {
+    const fa = FILES.indexOf(fileOf(a));
+    const fb = FILES.indexOf(fileOf(b));
+    const ra = rankOf(a);
+    const rb = rankOf(b);
+    if (ra === rb) return rangeEmpty(ctx, fa, fb, (f) => `${FILES[f]}${ra}`);
+    if (fa === fb) return rangeEmpty(ctx, ra, rb, (r) => `${FILES[fa]}${r}`);
+    return false;
+  }
+  function rangeEmpty(ctx, from, to, squareAt) {
+    for (let i = Math.min(from, to) + 1; i < Math.max(from, to); i += 1) {
+      if (ctx.occupied.has(squareAt(i))) return false;
+    }
+    return true;
+  }
+  var ENDGAME_MATERIAL_MAX = 13;
+  function ruleKingActivation(ctx) {
+    const queens = ctx.pieces.filter((p) => p.type === "q");
+    if (queens.length > 0) return null;
+    const heavyMinor = ctx.pieces.filter((p) => p.type === "r" || p.type === "n" || p.type === "b").reduce((sum, p) => sum + VALUES[p.type], 0);
+    if (heavyMinor > ENDGAME_MATERIAL_MAX) return null;
+    const king = ctx.kingSquare[ctx.myColor];
+    if (king && isCentral(king)) return null;
+    return {
+      id: "king-activation",
+      text: "Damen sind weg: Aktiviere den K\xF6nig Richtung Zentrum.",
+      priority: 20
+    };
+  }
+  var isCentral = (square) => "cdef".includes(fileOf(square)) && rankOf(square) >= 3 && rankOf(square) <= 6;
+  var MINOR_HOME = {
+    w: /* @__PURE__ */ new Set(["b1", "g1", "c1", "f1"]),
+    b: /* @__PURE__ */ new Set(["b8", "g8", "c8", "f8"])
+  };
+  var DEV_LEAD_MARGIN = 2;
+  function ruleDevelopmentLead(ctx) {
+    const lead = developedMinors(ctx, ctx.myColor) - developedMinors(ctx, ctx.enemyColor);
+    if (lead < DEV_LEAD_MARGIN) return null;
+    return {
+      id: "dev-lead-open-center",
+      text: "Entwicklungsvorsprung: \xD6ffne das Zentrum und nutze ihn, bevor der Gegner aufholt.",
+      priority: 19
+    };
+  }
+  function developedMinors(ctx, color) {
+    let count = 0;
+    for (const p of ctx.pieces) {
+      if ((p.type === "n" || p.type === "b") && p.color === color && !MINOR_HOME[color].has(p.square)) {
+        count += 1;
+      }
+    }
+    return count;
+  }
+  function ruleMyPassedPawn(ctx) {
+    const passer = mostAdvancedPasser(ctx, ctx.myColor);
+    if (!passer) return null;
+    return {
+      id: "passed-pawn-own",
+      text: `Freibauer auf ${passer.square}: vorschieben und st\xFCtzen.`,
+      priority: 18
+    };
+  }
+  function ruleEnemyPassedPawn(ctx) {
+    const passer = mostAdvancedPasser(ctx, ctx.enemyColor);
+    if (!passer) return null;
+    return {
+      id: "passed-pawn-enemy",
+      text: `Blockiere den gegnerischen Freibauer auf ${passer.square}.`,
+      priority: 14
+    };
+  }
+  function ruleAttackUncastledKing(ctx) {
+    if (!ctx.castled[ctx.myColor] || ctx.castled[ctx.enemyColor]) return null;
+    return {
+      id: "attack-uncastled-king",
+      text: "Du stehst sicher, der Gegner nicht: \xD6ffne die Stellung und greif den K\xF6nig an, bevor er rochiert.",
+      priority: 10
+    };
+  }
+  var CASTLE_BY_MOVE = 8;
+  function ruleCastleNow(ctx) {
+    if (ctx.castled[ctx.myColor]) return null;
+    const rights = ctx.castlingRights[ctx.myColor];
+    if (!rights?.k && !rights?.q) return null;
+    if (ctx.fullmove < CASTLE_BY_MOVE) return null;
+    return { id: "castle-now", text: "Rochiere jetzt und bring den K\xF6nig in Sicherheit.", priority: 11 };
+  }
+  var OPENING_MAX_MOVE = 12;
+  function ruleOpening(ctx) {
+    if (ctx.fullmove > OPENING_MAX_MOVE) return null;
+    const opening = detectOpening(ctx.history);
+    const plan = opening?.plans?.[ctx.myColor];
+    if (!plan) return null;
+    return { id: "opening-plan", text: plan, priority: 30 };
+  }
+  var RULES = [
+    ruleOpening,
+    ruleAttackUndefended,
+    ruleAttackUncastledKing,
+    ruleCastleNow,
+    ruleEnemyPassedPawn,
+    ruleRookSeventh,
+    ruleRookOpenFile,
+    ruleDevelopmentLead,
+    ruleMyPassedPawn,
+    ruleKingActivation,
+    ruleConnectRooks,
+    ruleMaterial
+  ];
+  var FILES = ["a", "b", "c", "d", "e", "f", "g", "h"];
+  var fileOf = (square) => square[0];
+  var rankOf = (square) => Number(square[1]);
+  function pawnFiles(ctx, color) {
+    const files = /* @__PURE__ */ new Set();
+    for (const p of ctx.pieces) if (p.type === "p" && p.color === color) files.add(fileOf(p.square));
+    return files;
+  }
+  function mostAdvancedPasser(ctx, color) {
+    const enemy = color === "w" ? "b" : "w";
+    const enemyPawns = ctx.pieces.filter((p) => p.type === "p" && p.color === enemy);
+    const forward = color === "w" ? 1 : -1;
+    const advancement = (sq) => color === "w" ? rankOf(sq) : 9 - rankOf(sq);
+    let best = null;
+    for (const pawn of ctx.pieces) {
+      if (pawn.type !== "p" || pawn.color !== color) continue;
+      const file2 = fileOf(pawn.square);
+      const rank2 = rankOf(pawn.square);
+      const blocked = enemyPawns.some((e) => {
+        const df = Math.abs(FILES.indexOf(fileOf(e.square)) - FILES.indexOf(file2));
+        const ahead = forward === 1 ? rankOf(e.square) > rank2 : rankOf(e.square) < rank2;
+        return df <= 1 && ahead;
+      });
+      if (blocked) continue;
+      if (!best || advancement(pawn.square) > advancement(best.square)) best = pawn;
+    }
+    return best;
+  }
+  function rookCanReachRank(ctx, from, targetRank) {
+    const file2 = fileOf(from);
+    const step = targetRank > rankOf(from) ? 1 : -1;
+    for (let r = rankOf(from) + step; r !== targetRank; r += step) {
+      if (ctx.occupied.has(`${file2}${r}`)) return false;
+    }
+    const landing = ctx.occupied.get(`${file2}${targetRank}`);
+    return !landing || landing.color !== ctx.myColor;
+  }
+
   // src/play-context.js
   var ASSIST_SAFE_PATH = /^\/(analysis|training|study|tv)(\/|$)/;
   function isAssistSafeContext(location2) {
@@ -4858,6 +5236,75 @@
     ctx.restore();
   }
 
+  // src/goal-panel.js
+  var PANEL_ID = "lichess-goal-panel";
+  var PANEL_STYLE = {
+    position: "fixed",
+    left: "12px",
+    top: "92px",
+    zIndex: "99998",
+    maxWidth: "260px",
+    boxSizing: "border-box",
+    padding: "10px 12px",
+    borderRadius: "10px",
+    border: "1px solid #b98cff",
+    borderLeft: "4px solid #b98cff",
+    background: "rgba(21, 19, 31, 0.92)",
+    color: "#ece8f5",
+    font: "13px/1.4 'Segoe UI', system-ui, sans-serif",
+    boxShadow: "0 4px 18px rgba(0, 0, 0, 0.45)",
+    pointerEvents: "none"
+  };
+  var GoalPanel = class {
+    constructor({ document: doc } = {}) {
+      this.doc = doc ?? (typeof document !== "undefined" ? document : null);
+      this.goals = [];
+    }
+    // Replace the listed goals. An empty list hides the panel entirely — the panel
+    // is only ever visible when there is something concrete to do.
+    render(goals) {
+      this.goals = goals ?? [];
+      if (!this.doc || this.goals.length === 0) {
+        this.clear();
+        return;
+      }
+      const panel = this._ensurePanel();
+      panel.replaceChildren(this._header(), ...this.goals.map((g) => this._item(g)));
+    }
+    // Remove the panel (feature off, unsafe context, or no goals).
+    clear() {
+      this.goals = [];
+      this.doc?.getElementById(PANEL_ID)?.remove();
+    }
+    _ensurePanel() {
+      let panel = this.doc.getElementById(PANEL_ID);
+      if (!panel) {
+        panel = this.doc.createElement("div");
+        panel.id = PANEL_ID;
+        Object.assign(panel.style, PANEL_STYLE);
+        this.doc.body.appendChild(panel);
+      }
+      return panel;
+    }
+    _header() {
+      const header = this.doc.createElement("div");
+      header.textContent = "\u{1F3AF} Ziele";
+      Object.assign(header.style, {
+        fontWeight: "600",
+        marginBottom: "6px",
+        color: "#b98cff",
+        letterSpacing: ".02em"
+      });
+      return header;
+    }
+    _item(goal) {
+      const row = this.doc.createElement("div");
+      row.textContent = goal.text;
+      Object.assign(row.style, { margin: "3px 0" });
+      return row;
+    }
+  };
+
   // src/runtime.js
   var PIECE_NAMES = { p: "Pawn", n: "Knight", b: "Bishop", r: "Rook", q: "Queen", k: "King" };
   function domToast(doc, text) {
@@ -4896,6 +5343,7 @@
     observerFactory = (cb) => new MutationObserver(cb),
     pieceSprites = null,
     undefendedLayer = null,
+    goalPanel = null,
     notify
   } = {}) {
     const settings = { ...config, shakePieces: [...config?.shakePieces ?? []] };
@@ -4907,8 +5355,10 @@
     let observer = null;
     let lastSnapshot = null;
     let lastUndefendedSig = null;
+    let lastGoalsSig = null;
     const sprites = pieceSprites ?? (doc ? new PieceSprites({ document: doc }) : null);
     const undefended = undefendedLayer ?? (doc ? new UndefendedLayer({ document: doc }) : null);
+    const goals = goalPanel ?? (doc ? new GoalPanel({ document: doc }) : null);
     function ensureRenderer() {
       overlay.attach();
       const state = overlay.sync();
@@ -4971,6 +5421,7 @@
       const events = stream.next(snapshot);
       events.forEach((event) => renderCapture(event, snapshot?.id));
       updateUndefended(snapshot);
+      updateGoals(snapshot);
     }
     function viewerColor() {
       const black = doc?.querySelector?.(".cg-wrap")?.classList?.contains("orientation-black") ?? false;
@@ -4989,6 +5440,20 @@
       if (sig === lastUndefendedSig) return;
       lastUndefendedSig = sig;
       undefended.render(findUndefended(positionAt(snapshot), myColor));
+    }
+    function updateGoals(snapshot) {
+      if (!goals) return;
+      if (!settings.enabled || !settings.showGoals || !snapshot || !isAssistSafeContext(loc)) {
+        goals.clear();
+        lastGoalsSig = null;
+        return;
+      }
+      const myColor = viewerColor();
+      const ply = snapshot.activePly ?? snapshot.sanMoves?.length ?? 0;
+      const sig = `${snapshot.id}|${ply}|${myColor}`;
+      if (sig === lastGoalsSig) return;
+      lastGoalsSig = sig;
+      goals.render(deriveGoals(positionAt(snapshot), myColor));
     }
     function start() {
       if (doc) {
@@ -5014,6 +5479,10 @@
         lastUndefendedSig = null;
         updateUndefended(lastSnapshot);
       }
+      if (partial && ("showGoals" in partial || "enabled" in partial)) {
+        lastGoalsSig = null;
+        updateGoals(lastSnapshot);
+      }
     }
     function stop() {
       if (observer) {
@@ -5025,6 +5494,7 @@
         frameRequest = null;
       }
       undefended?.clear();
+      goals?.clear();
     }
     return {
       start,
@@ -5051,9 +5521,15 @@
     // keeps its "cosmetic only" default behaviour (the overlay is position
     // analysis and only ever renders in fair-play-safe contexts — see
     // play-context.js). The userscript opts itself in (userscript-entry.js).
-    showUndefended: false
+    showUndefended: false,
+    // Goal panel (goals.js). Same story as showUndefended — it is position
+    // analysis / move guidance, so OFF by default in the extension and only ever
+    // shown in fair-play-safe contexts. The userscript opts itself in.
+    showGoals: false
   };
 
   // src/userscript-entry.js
-  createRuntime({ config: { ...DEFAULT_SETTINGS, showUndefended: true } }).start();
+  createRuntime({
+    config: { ...DEFAULT_SETTINGS, showUndefended: true, showGoals: true }
+  }).start();
 })();

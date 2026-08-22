@@ -13,7 +13,11 @@ export const DEFAULT_SETTINGS = {
   // keeps its "cosmetic only" default behaviour (the overlay is position
   // analysis and only ever renders in fair-play-safe contexts — see
   // play-context.js). The userscript opts itself in (userscript-entry.js).
-  showUndefended: false
+  showUndefended: false,
+  // Goal panel (goals.js). Same story as showUndefended — it is position
+  // analysis / move guidance, so OFF by default in the extension and only ever
+  // shown in fair-play-safe contexts. The userscript opts itself in.
+  showGoals: false
 };
 
 export function mergeSettings(stored) {
@@ -28,6 +32,7 @@ export function mergeSettings(stored) {
       : DEFAULT_SETTINGS.intensity,
     soundOn: typeof s.soundOn === 'boolean' ? s.soundOn : DEFAULT_SETTINGS.soundOn,
     showUndefended: typeof s.showUndefended === 'boolean' ? s.showUndefended : DEFAULT_SETTINGS.showUndefended,
+    showGoals: typeof s.showGoals === 'boolean' ? s.showGoals : DEFAULT_SETTINGS.showGoals,
     buildupMs: Number.isFinite(buildupMs) ? Math.max(0, buildupMs) : DEFAULT_SETTINGS.buildupMs,
     shakePieces: Array.isArray(s.shakePieces)
       ? s.shakePieces.filter((p) => KNOWN_PIECES.includes(p))

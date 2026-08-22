@@ -8,8 +8,10 @@ import { resolvePack } from './packs.js';
 import { PieceSprites } from './piece-sprites.js';
 import { positionAt } from './chess-state.js';
 import { findUndefended } from './undefended.js';
+import { deriveGoals } from './goals.js';
 import { isAssistSafeContext } from './play-context.js';
 import { UndefendedLayer } from './undefended-layer.js';
+import { GoalPanel } from './goal-panel.js';
 
 const PIECE_NAMES = { p: 'Pawn', n: 'Knight', b: 'Bishop', r: 'Rook', q: 'Queen', k: 'King' };
 
@@ -43,6 +45,7 @@ export function createRuntime({
   observerFactory = (cb) => new MutationObserver(cb),
   pieceSprites = null,
   undefendedLayer = null,
+  goalPanel = null,
   notify
 } = {}) {
   const settings = { ...config, shakePieces: [...(config?.shakePieces ?? [])] };
@@ -54,8 +57,10 @@ export function createRuntime({
   let observer = null;
   let lastSnapshot = null;
   let lastUndefendedSig = null;
+  let lastGoalsSig = null;
   const sprites = pieceSprites ?? (doc ? new PieceSprites({ document: doc }) : null);
   const undefended = undefendedLayer ?? (doc ? new UndefendedLayer({ document: doc }) : null);
+  const goals = goalPanel ?? (doc ? new GoalPanel({ document: doc }) : null);
 
   function ensureRenderer() {
     overlay.attach();
@@ -120,6 +125,7 @@ export function createRuntime({
     const events = stream.next(snapshot);
     events.forEach((event) => renderCapture(event, snapshot?.id));
     updateUndefended(snapshot);
+    updateGoals(snapshot);
   }
 
   // The viewer's colour is the board orientation (the side at the bottom). Used
@@ -147,6 +153,26 @@ export function createRuntime({
     if (sig === lastUndefendedSig) return;
     lastUndefendedSig = sig;
     undefended.render(findUndefended(positionAt(snapshot), myColor));
+  }
+
+  // Recompute + repaint the goal panel for the position on screen. Same gating
+  // and change-detection story as the undefended overlay: it is position analysis
+  // / move guidance, so it is shown only with the toggle on AND in a fair-play-
+  // safe context (never during a live game), and only re-derived when the
+  // position, viewed ply or orientation actually changed.
+  function updateGoals(snapshot) {
+    if (!goals) return;
+    if (!settings.enabled || !settings.showGoals || !snapshot || !isAssistSafeContext(loc)) {
+      goals.clear();
+      lastGoalsSig = null;
+      return;
+    }
+    const myColor = viewerColor();
+    const ply = snapshot.activePly ?? snapshot.sanMoves?.length ?? 0;
+    const sig = `${snapshot.id}|${ply}|${myColor}`;
+    if (sig === lastGoalsSig) return;
+    lastGoalsSig = sig;
+    goals.render(deriveGoals(positionAt(snapshot), myColor));
   }
 
   function start() {
@@ -178,12 +204,17 @@ export function createRuntime({
       lastUndefendedSig = null;
       updateUndefended(lastSnapshot);
     }
+    if (partial && ('showGoals' in partial || 'enabled' in partial)) {
+      lastGoalsSig = null;
+      updateGoals(lastSnapshot);
+    }
   }
 
   function stop() {
     if (observer) { observer.disconnect(); observer = null; }
     if (frameRequest != null) { cancel(frameRequest); frameRequest = null; }
     undefended?.clear();
+    goals?.clear();
   }
 
   return {
