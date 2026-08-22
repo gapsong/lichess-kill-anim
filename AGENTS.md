@@ -1,12 +1,22 @@
 # Lichess Kill Animations
 
-> **Fair-play: cosmetic only (since v1.0.0).** The tactical **pattern hints** were **removed**
+> **Fair-play: cosmetic by default.** The tactical **pattern hints** were **removed**
 > so the extension is safe to publish. They counted as **outside assistance** under Lichess and
-> chess.com fair-play rules in ranked/live games. The extension now draws **only** the capture
-> kill animations — no position analysis, no move/tactic suggestions. The removed machinery
+> chess.com fair-play rules in ranked/live games. The removed machinery
 > (`src/patterns.js`, `src/pattern-overlay.js`, `src/pattern-art.js`, `derivePosition`, the
 > `patternsOn` toggle, and the gallery pattern tiles) lives in git history if it ever needs to
 > return **gated to analysis/puzzles/review only** (wiring point was `src/runtime.js`).
+>
+> **Undefended-piece overlay (since v1.1.0 / userscript 4.5.0) — the ONLY analysis
+> feature, and it is HARD-GATED.** It marks undefended pieces (own = red brackets = danger,
+> enemy = cyan ring = chance). This IS position analysis = outside assistance, so it renders
+> **only** in fair-play-safe contexts — the allowlist in `src/play-context.js`
+> (`/analysis`, `/training`, `/study`, `/tv`) — and **never** on a live game page. It is
+> **OFF by default** in the published extension (popup toggle) and **ON** only in the personal
+> userscript (`src/userscript-entry.js`). **Do NOT ungate it, default it on in the extension,
+> or widen the allowlist to game pages** without the captain's explicit sign-off — that would
+> re-introduce a bannable fair-play violation and break the store listing's cosmetic-only claim.
+> The kill animations themselves stay enabled everywhere (pure reaction to moves already made).
 
 ## Projektzweck
 
@@ -103,17 +113,47 @@ Auto-Updates. `docs/` wird von Pages KOMPLETT oeffentlich serviert — interne P
 
 ### Core-Pipeline
 
-- `src/chess-state.js`: erzeugt CaptureEvents aus Start-FEN und SAN-Zugliste via `chess.js`
+- `src/chess-state.js`: erzeugt CaptureEvents aus Start-FEN und SAN-Zugliste via `chess.js`; `positionAt(snapshot)` rekonstruiert zusaetzlich die Stellung am `activePly` (fuer das Undefended-Overlay)
 - `src/move-feed.js`: liest Lichess-Zuglisten aus dem DOM
 - `src/board-geometry.js`: rechnet Squares in Pixelkoordinaten um
 - `src/event-stream.js`: dedupliziert Events ueber MutationObserver-Scans. **Silent-Baseline beim Kontext-Eintritt:** Der erste Scan eines neuen Kontexts (`snapshot.id` gewechselt, `primed`-Flag zurueckgesetzt) darf keine Animation feuern — sonst spielen beim Betreten einer laufenden Partie (TV, Refresh, Analyse mit vorhandenen Zuegen) *alle* bereits gespielten Captures auf einmal ab. Deshalb seedet der erste Scan alle bereits auf dem Brett liegenden Captures still in `seen` (Limit `activePly ?? Infinity`, damit auf dem Analyse-Brett nur bis zum betrachteten Ply gebaselinet wird und Vorwaertsblaettern auf einen spaeteren Capture weiterhin feuert) und liefert `[]`. Erst Captures, die in einem *spaeteren* Scan neu auftauchen, feuern.
 - `src/render-event.js`: reichert CaptureEvents mit board-lokalen Canvas-Koordinaten an
-- `src/canvas-overlay.js`: verwaltet ein board-lokales Canvas ueber `cg-board`
+- `src/canvas-overlay.js`: verwaltet ein board-lokales Canvas ueber `cg-board`; via `id`/`zIndex`/`onSync`-Optionen koennen mehrere Layer koexistieren (Kill-Canvas z3, Undefended-Canvas z2)
 - `src/particle-fx-renderer.js`: Live-Partikel-Engine; zeichnet alle Effekte direkt per Canvas-API (kein Spritesheet); unterstuetzt `buildupMs`-Crosshair vor Impact
 - `src/board-shake.js`: abklingender Screen-Shake auf `cg-board` (Vlambeer-Style), getriggert via `onImpact`
+- `src/undefended.js`: **reine** Schachlogik — `findUndefended(chess, myColor)` liefert die ungedeckten Figuren (via `chess.attackers(sq, color)`); FEN-unittestbar, keine DOM/Canvas-Abhaengigkeit
+- `src/undefended-layer.js`: eigener Marker-Canvas (`CanvasOverlay`), zeichnet die Marker (own=rote Ecken, enemy=cyan Ring)
+- `src/play-context.js`: Fair-Play-Gate `isAssistSafeContext(location)` — Allowlist der erlaubten Kontexte
 - `src/userscript-entry.js`: Tampermonkey-Einstieg, Toasts und Canvas-Renderer
 
 **Wichtig — `activePly` respektieren:** Auf dem Analyse-Brett sind alle Zuege bereits im DOM; `snapshot.activePly` (aus `move.active`) ist der Ply, den der Nutzer gerade ansieht, und kann kleiner sein als `sanMoves.length`. `CaptureEventStream` beruecksichtigt das. Neue Stellen, die Captures aus einem `snapshot` ableiten, muessen `activePly` ebenfalls respektieren, sonst feuern beim Zurueckblaettern falsche Animationen.
+
+### Undefended-Overlay (ungedeckte Figuren)
+
+Markiert live, welche Figuren **ungedeckt** (von keiner gleichfarbigen Figur verteidigt)
+sind — eigene = rote Ecken (Gefahr), gegnerische = cyan Ring (Chance). Fair-Play-Regeln
+siehe Banner oben: **hart gegated** ueber `src/play-context.js`, nur in Analyse/Puzzle/
+Study/TV, nie im Live-Spiel; Extension default OFF (Popup-Toggle `showUndefended`),
+Userscript ON.
+
+- **Verteidigungs-Orakel = `chess.attackers(square, color)`** (chess.js). Fuer ein
+  besetztes Feld liefert das exakt die gleichfarbigen Verteidiger (die Figur greift ihr
+  eigenes Feld nicht an). Enthaelt Bauern-Diagonaldeckung, Koenigsdeckung und
+  X-Ray-Blocker korrekt — **keine eigene Schachlogik nachbauen.** Ungedeckt ⇔
+  `attackers(...).length === 0`.
+- **v1-Vereinfachungen (bewusst, dokumentiert):** (a) eine **gefesselte** Figur zaehlt
+  weiter als Verteidiger (`attackers` ist reine Geometrie, ignoriert Pins); (b) der
+  **Koenig** wird nie als ungedeckt markiert (kann nicht haengen), deckt aber
+  Nachbarfelder (chess.js gratis).
+- **own/enemy = Brett-Orientierung** (`orientation-black` ⇒ Betrachter schwarz). Auf dem
+  Analyse-Brett gibt es keinen "Spieler", die Orientierung ist die einzige Perspektive.
+- **Rendering-Architektur:** eigener Marker-Canvas (nicht der Kill-Canvas, der pro Frame
+  geleert wird). `runtime.updateUndefended()` rechnet nur neu, wenn sich `snapshot.id`,
+  `activePly` oder Orientierung aendern (Change-Detection-Signatur); der Marker-Canvas
+  repaintet bei Flip/Resize ueber `CanvasOverlay.onSync`. Neue Effekte/Marker gegen diese
+  Struktur bauen, nicht parallel.
+- **Grenze:** `readSnapshot()` liefert `null` ohne Zugliste — auf einem frisch aus FEN
+  geladenen Analyse-Brett *ohne* gespielten Zug erscheinen darum (noch) keine Marker.
 
 ### Build-Scripts
 

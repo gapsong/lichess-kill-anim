@@ -47,6 +47,12 @@ test('booleans must be real booleans, else default', () => {
   assert.equal(mergeSettings({ soundOn: false }).soundOn, false);
 });
 
+test('showUndefended defaults off and accepts a real boolean', () => {
+  assert.equal(mergeSettings({}).showUndefended, false);
+  assert.equal(mergeSettings({ showUndefended: true }).showUndefended, true);
+  assert.equal(mergeSettings({ showUndefended: 'yes' }).showUndefended, false);
+});
+
 test('mergeSettings returns a fresh shakePieces array (no shared reference)', () => {
   const out = mergeSettings({});
   assert.notEqual(out.shakePieces, DEFAULT_SETTINGS.shakePieces);

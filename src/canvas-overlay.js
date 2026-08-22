@@ -3,12 +3,22 @@ export class CanvasOverlay {
     document = globalThis.document,
     devicePixelRatio = globalThis.devicePixelRatio ?? 1,
     ResizeObserver = globalThis.ResizeObserver,
-    getContext = (canvas) => canvas.getContext?.('2d')
+    getContext = (canvas) => canvas.getContext?.('2d'),
+    // Distinct id/zIndex let more than one board-local layer coexist (e.g. the
+    // kill-animation canvas and the static undefended-marker canvas).
+    id = 'lichess-kill-overlay',
+    zIndex = '3',
+    // Fired after every sync() with the fresh state. A static layer uses this to
+    // repaint on ResizeObserver-driven syncs (flip/resize) without polling.
+    onSync = null
   } = {}) {
     this.document = document;
     this.devicePixelRatio = devicePixelRatio;
     this.ResizeObserver = ResizeObserver;
     this.getContext = getContext;
+    this.id = id;
+    this.zIndex = zIndex;
+    this.onSync = onSync;
     this.canvas = null;
     this.board = null;
     this.resizeObserver = null;
@@ -17,17 +27,17 @@ export class CanvasOverlay {
   attach() {
     if (!this._ensureBoard()) return null;
 
-    this.canvas = this.document.getElementById('lichess-kill-overlay');
+    this.canvas = this.document.getElementById(this.id);
 
     if (!this.canvas) {
       this.canvas = this.document.createElement('canvas');
-      this.canvas.id = 'lichess-kill-overlay';
+      this.canvas.id = this.id;
       Object.assign(this.canvas.style, {
         position: 'absolute',
         left: '0px',
         top: '0px',
         pointerEvents: 'none',
-        zIndex: '3'
+        zIndex: this.zIndex
       });
     }
 
@@ -81,7 +91,7 @@ export class CanvasOverlay {
     const context = this.getContext(this.canvas);
     context?.setTransform?.(dpr, 0, 0, dpr, 0, 0);
 
-    return {
+    const state = {
       canvas: this.canvas,
       context,
       size,
@@ -91,5 +101,8 @@ export class CanvasOverlay {
         ?.classList
         .contains('orientation-black') ?? false
     };
+
+    this.onSync?.(state);
+    return state;
   }
 }
