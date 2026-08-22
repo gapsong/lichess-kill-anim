@@ -180,6 +180,68 @@ test('toggling showUndefended via applyConfig repaints immediately', () => {
   assert.equal(undefended.rendered.length, 1); // repainted from the last snapshot
 });
 
+// A lone black knight on d5 is a loose enemy piece, so the goal engine produces
+// at least one goal ("attack the undefended knight") for a white viewer.
+test('renders goal panel in a safe context when the toggle is on', () => {
+  const doc = setupDoc();
+  const panel = spyLayer();
+  const rt = createRuntime(baseOpts(doc, {
+    config: { ...DEFAULT_SETTINGS, showGoals: true },
+    createRenderer: (opts) => ({ ...opts, activeCount: 0, play() {}, tick() {} }),
+    goalPanel: panel,
+    loc: { pathname: '/analysis' },
+    readSnapshotFn: loneKnightSnapshot
+  }));
+  rt.start();
+  assert.equal(panel.rendered.length, 1);
+  assert.ok(panel.rendered[0].some((g) => g.id === 'attack-undefended'));
+});
+
+test('never renders goal panel in a live-game context (fair-play gate)', () => {
+  const doc = setupDoc();
+  const panel = spyLayer();
+  const rt = createRuntime(baseOpts(doc, {
+    config: { ...DEFAULT_SETTINGS, showGoals: true },
+    createRenderer: (opts) => ({ ...opts, activeCount: 0, play() {}, tick() {} }),
+    goalPanel: panel,
+    loc: { pathname: '/abcdefgh' }, // live game page
+    readSnapshotFn: loneKnightSnapshot
+  }));
+  rt.start();
+  assert.equal(panel.rendered.length, 0);
+  assert.ok(panel.cleared >= 1);
+});
+
+test('does not render goal panel when the toggle is off', () => {
+  const doc = setupDoc();
+  const panel = spyLayer();
+  const rt = createRuntime(baseOpts(doc, {
+    config: { ...DEFAULT_SETTINGS, showGoals: false },
+    createRenderer: (opts) => ({ ...opts, activeCount: 0, play() {}, tick() {} }),
+    goalPanel: panel,
+    loc: { pathname: '/analysis' },
+    readSnapshotFn: loneKnightSnapshot
+  }));
+  rt.start();
+  assert.equal(panel.rendered.length, 0);
+});
+
+test('toggling showGoals via applyConfig repaints immediately', () => {
+  const doc = setupDoc();
+  const panel = spyLayer();
+  const rt = createRuntime(baseOpts(doc, {
+    config: { ...DEFAULT_SETTINGS, showGoals: false },
+    createRenderer: (opts) => ({ ...opts, activeCount: 0, play() {}, tick() {} }),
+    goalPanel: panel,
+    loc: { pathname: '/training' },
+    readSnapshotFn: loneKnightSnapshot
+  }));
+  rt.start();
+  assert.equal(panel.rendered.length, 0);
+  rt.applyConfig({ showGoals: true });
+  assert.equal(panel.rendered.length, 1);
+});
+
 test('applyConfig clamps out-of-range intensity injected past mergeSettings', () => {
   const doc = setupDoc();
   let renderer;
