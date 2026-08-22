@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Lichess Kill Notifier
 // @namespace    dismo/lichess-kill
-// @version      4.4.1
+// @version      4.5.0
 // @description  Killing-Animationen bei Schlagzuegen mit eigenem Chess-State statt fragilem Board-DOM.
 // @author       Dismo
 // @match        https://lichess.org/*
@@ -50,28 +50,38 @@
       document: document2 = globalThis.document,
       devicePixelRatio = globalThis.devicePixelRatio ?? 1,
       ResizeObserver = globalThis.ResizeObserver,
-      getContext = (canvas) => canvas.getContext?.("2d")
+      getContext = (canvas) => canvas.getContext?.("2d"),
+      // Distinct id/zIndex let more than one board-local layer coexist (e.g. the
+      // kill-animation canvas and the static undefended-marker canvas).
+      id = "lichess-kill-overlay",
+      zIndex = "3",
+      // Fired after every sync() with the fresh state. A static layer uses this to
+      // repaint on ResizeObserver-driven syncs (flip/resize) without polling.
+      onSync = null
     } = {}) {
       this.document = document2;
       this.devicePixelRatio = devicePixelRatio;
       this.ResizeObserver = ResizeObserver;
       this.getContext = getContext;
+      this.id = id;
+      this.zIndex = zIndex;
+      this.onSync = onSync;
       this.canvas = null;
       this.board = null;
       this.resizeObserver = null;
     }
     attach() {
       if (!this._ensureBoard()) return null;
-      this.canvas = this.document.getElementById("lichess-kill-overlay");
+      this.canvas = this.document.getElementById(this.id);
       if (!this.canvas) {
         this.canvas = this.document.createElement("canvas");
-        this.canvas.id = "lichess-kill-overlay";
+        this.canvas.id = this.id;
         Object.assign(this.canvas.style, {
           position: "absolute",
           left: "0px",
           top: "0px",
           pointerEvents: "none",
-          zIndex: "3"
+          zIndex: this.zIndex
         });
       }
       this.sync();
@@ -113,13 +123,15 @@
       if (this.canvas.height !== bufferSize) this.canvas.height = bufferSize;
       const context = this.getContext(this.canvas);
       context?.setTransform?.(dpr, 0, 0, dpr, 0, 0);
-      return {
+      const state = {
         canvas: this.canvas,
         context,
         size,
         squareSize: size / 8,
         isBlackOrientation: this.document.querySelector(".cg-wrap")?.classList.contains("orientation-black") ?? false
       };
+      this.onSync?.(state);
+      return state;
     }
   };
 
@@ -3580,6 +3592,20 @@
   };
 
   // src/chess-state.js
+  function positionAt(snapshot) {
+    const chess = snapshot?.initialFen ? new Chess(snapshot.initialFen) : new Chess();
+    const sanMoves = snapshot?.sanMoves ?? [];
+    const limit = snapshot?.activePly ?? sanMoves.length;
+    for (const [index, san] of sanMoves.entries()) {
+      if (index >= limit) break;
+      try {
+        chess.move(san);
+      } catch (_error) {
+        break;
+      }
+    }
+    return chess;
+  }
   function deriveEvents(snapshot) {
     const chess = snapshot.initialFen ? new Chess(snapshot.initialFen) : new Chess();
     const events = [];
@@ -4717,6 +4743,121 @@
     }
   };
 
+  // src/undefended.js
+  var KING2 = "k";
+  function findUndefended(chess, myColor) {
+    const undefended = [];
+    for (const row of chess.board()) {
+      for (const piece of row) {
+        if (!piece) continue;
+        if (piece.type === KING2) continue;
+        const defenders = chess.attackers(piece.square, piece.color);
+        if (defenders.length > 0) continue;
+        undefended.push({
+          square: piece.square,
+          type: piece.type,
+          color: piece.color,
+          side: piece.color === myColor ? "own" : "enemy"
+        });
+      }
+    }
+    return undefended;
+  }
+
+  // src/play-context.js
+  var ASSIST_SAFE_PATH = /^\/(analysis|training|study|tv)(\/|$)/;
+  function isAssistSafeContext(location2) {
+    const pathname = location2?.pathname;
+    if (typeof pathname !== "string") return false;
+    return ASSIST_SAFE_PATH.test(pathname);
+  }
+
+  // src/undefended-layer.js
+  var STYLES = {
+    own: { color: "#ff5252", shape: "brackets" },
+    enemy: { color: "#25e0d0", shape: "ring" }
+  };
+  var UndefendedLayer = class {
+    constructor({ document: document2, overlay } = {}) {
+      this.pieces = [];
+      this.overlay = overlay ?? new CanvasOverlay({
+        document: document2,
+        id: "lichess-undefended-overlay",
+        zIndex: "2",
+        // under the kill-animation canvas (z-index 3), over the board
+        onSync: (state) => this._draw(state)
+      });
+    }
+    // Replace the highlighted set with findUndefended() output and repaint.
+    render(pieces) {
+      this.pieces = pieces ?? [];
+      this.overlay.attach();
+    }
+    // Remove all markers (feature off, unsafe context, or empty position).
+    clear() {
+      if (this.pieces.length === 0) return;
+      this.pieces = [];
+      this.overlay.attach();
+    }
+    _draw(state) {
+      const ctx = state?.context;
+      if (!ctx) return;
+      const { size, isBlackOrientation } = state;
+      ctx.clearRect(0, 0, size, size);
+      for (const piece of this.pieces) {
+        const { x, y, size: cell } = boardLocalSquareCenter(piece.square, size, isBlackOrientation);
+        const style = STYLES[piece.side] ?? STYLES.enemy;
+        drawMarker(ctx, style, x, y, cell);
+      }
+    }
+  };
+  function drawMarker(ctx, style, cx, cy, cell) {
+    if (style.shape === "ring") drawRing(ctx, style.color, cx, cy, cell);
+    else drawBrackets(ctx, style.color, cx, cy, cell);
+  }
+  function drawBrackets(ctx, color, cx, cy, cell) {
+    const half = cell / 2;
+    const pad = cell * 0.13;
+    const arm = cell * 0.24;
+    const left = cx - half + pad;
+    const right = cx + half - pad;
+    const top = cy - half + pad;
+    const bottom = cy + half - pad;
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = Math.max(2, cell * 0.07);
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.shadowColor = color;
+    ctx.shadowBlur = cell * 0.1;
+    ctx.beginPath();
+    ctx.moveTo(left, top + arm);
+    ctx.lineTo(left, top);
+    ctx.lineTo(left + arm, top);
+    ctx.moveTo(right - arm, top);
+    ctx.lineTo(right, top);
+    ctx.lineTo(right, top + arm);
+    ctx.moveTo(right, bottom - arm);
+    ctx.lineTo(right, bottom);
+    ctx.lineTo(right - arm, bottom);
+    ctx.moveTo(left + arm, bottom);
+    ctx.lineTo(left, bottom);
+    ctx.lineTo(left, bottom - arm);
+    ctx.stroke();
+    ctx.restore();
+  }
+  function drawRing(ctx, color, cx, cy, cell) {
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = Math.max(2, cell * 0.07);
+    ctx.shadowColor = color;
+    ctx.shadowBlur = cell * 0.1;
+    ctx.beginPath();
+    ctx.arc(cx, cy, cell * 0.4, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+
   // src/runtime.js
   var PIECE_NAMES = { p: "Pawn", n: "Knight", b: "Bishop", r: "Rook", q: "Queen", k: "King" };
   function domToast(doc, text) {
@@ -4754,6 +4895,7 @@
     loc = typeof location !== "undefined" ? location : null,
     observerFactory = (cb) => new MutationObserver(cb),
     pieceSprites = null,
+    undefendedLayer = null,
     notify
   } = {}) {
     const settings = { ...config, shakePieces: [...config?.shakePieces ?? []] };
@@ -4763,7 +4905,10 @@
     let currentContext = null;
     let currentSize = 0;
     let observer = null;
+    let lastSnapshot = null;
+    let lastUndefendedSig = null;
     const sprites = pieceSprites ?? (doc ? new PieceSprites({ document: doc }) : null);
+    const undefended = undefendedLayer ?? (doc ? new UndefendedLayer({ document: doc }) : null);
     function ensureRenderer() {
       overlay.attach();
       const state = overlay.sync();
@@ -4822,8 +4967,28 @@
     }
     function scan() {
       const snapshot = readSnapshotFn(doc, loc);
+      lastSnapshot = snapshot;
       const events = stream.next(snapshot);
       events.forEach((event) => renderCapture(event, snapshot?.id));
+      updateUndefended(snapshot);
+    }
+    function viewerColor() {
+      const black = doc?.querySelector?.(".cg-wrap")?.classList?.contains("orientation-black") ?? false;
+      return black ? "b" : "w";
+    }
+    function updateUndefended(snapshot) {
+      if (!undefended) return;
+      if (!settings.enabled || !settings.showUndefended || !snapshot || !isAssistSafeContext(loc)) {
+        undefended.clear();
+        lastUndefendedSig = null;
+        return;
+      }
+      const myColor = viewerColor();
+      const ply = snapshot.activePly ?? snapshot.sanMoves?.length ?? 0;
+      const sig = `${snapshot.id}|${ply}|${myColor}`;
+      if (sig === lastUndefendedSig) return;
+      lastUndefendedSig = sig;
+      undefended.render(findUndefended(positionAt(snapshot), myColor));
     }
     function start() {
       if (doc) {
@@ -4845,6 +5010,10 @@
         renderer.soundOn = settings.soundOn;
         renderer.buildupMs = settings.buildupMs;
       }
+      if (partial && ("showUndefended" in partial || "enabled" in partial)) {
+        lastUndefendedSig = null;
+        updateUndefended(lastSnapshot);
+      }
     }
     function stop() {
       if (observer) {
@@ -4855,6 +5024,7 @@
         cancel(frameRequest);
         frameRequest = null;
       }
+      undefended?.clear();
     }
     return {
       start,
@@ -4876,9 +5046,14 @@
     intensity: 5,
     soundOn: true,
     buildupMs: 0,
-    shakePieces: ["q"]
+    shakePieces: ["q"],
+    // Undefended-piece overlay. OFF by default here so the published extension
+    // keeps its "cosmetic only" default behaviour (the overlay is position
+    // analysis and only ever renders in fair-play-safe contexts — see
+    // play-context.js). The userscript opts itself in (userscript-entry.js).
+    showUndefended: false
   };
 
   // src/userscript-entry.js
-  createRuntime({ config: DEFAULT_SETTINGS }).start();
+  createRuntime({ config: { ...DEFAULT_SETTINGS, showUndefended: true } }).start();
 })();

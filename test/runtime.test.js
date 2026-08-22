@@ -107,6 +107,79 @@ test('stop disconnects the observer and cancels a pending frame', () => {
   assert.deepEqual(cancelled, [123]);
 });
 
+function spyLayer() {
+  return {
+    rendered: [],
+    cleared: 0,
+    render(pieces) { this.rendered.push(pieces); },
+    clear() { this.cleared++; }
+  };
+}
+
+// A lone black knight on d5 with bare kings: d5 is the only undefended piece.
+const loneKnightSnapshot = () => ({ id: 'p1', initialFen: '4k3/8/8/3n4/8/8/8/4K3 w - - 0 1', sanMoves: [] });
+
+test('renders undefended markers in a safe context when the toggle is on', () => {
+  const doc = setupDoc();
+  const undefended = spyLayer();
+  const rt = createRuntime(baseOpts(doc, {
+    config: { ...DEFAULT_SETTINGS, showUndefended: true },
+    createRenderer: (opts) => ({ ...opts, activeCount: 0, play() {}, tick() {} }),
+    undefendedLayer: undefended,
+    loc: { pathname: '/analysis' },
+    readSnapshotFn: loneKnightSnapshot
+  }));
+  rt.start();
+  assert.equal(undefended.rendered.length, 1);
+  assert.deepEqual(undefended.rendered[0].map((p) => p.square), ['d5']);
+  assert.equal(undefended.rendered[0][0].side, 'enemy'); // white viewer, black piece
+});
+
+test('never renders undefended markers in a live-game context (fair-play gate)', () => {
+  const doc = setupDoc();
+  const undefended = spyLayer();
+  const rt = createRuntime(baseOpts(doc, {
+    config: { ...DEFAULT_SETTINGS, showUndefended: true },
+    createRenderer: (opts) => ({ ...opts, activeCount: 0, play() {}, tick() {} }),
+    undefendedLayer: undefended,
+    loc: { pathname: '/abcdefgh' }, // live game page
+    readSnapshotFn: loneKnightSnapshot
+  }));
+  rt.start();
+  assert.equal(undefended.rendered.length, 0);
+  assert.ok(undefended.cleared >= 1);
+});
+
+test('does not render undefended markers when the toggle is off', () => {
+  const doc = setupDoc();
+  const undefended = spyLayer();
+  const rt = createRuntime(baseOpts(doc, {
+    config: { ...DEFAULT_SETTINGS, showUndefended: false },
+    createRenderer: (opts) => ({ ...opts, activeCount: 0, play() {}, tick() {} }),
+    undefendedLayer: undefended,
+    loc: { pathname: '/analysis' },
+    readSnapshotFn: loneKnightSnapshot
+  }));
+  rt.start();
+  assert.equal(undefended.rendered.length, 0);
+});
+
+test('toggling showUndefended via applyConfig repaints immediately', () => {
+  const doc = setupDoc();
+  const undefended = spyLayer();
+  const rt = createRuntime(baseOpts(doc, {
+    config: { ...DEFAULT_SETTINGS, showUndefended: false },
+    createRenderer: (opts) => ({ ...opts, activeCount: 0, play() {}, tick() {} }),
+    undefendedLayer: undefended,
+    loc: { pathname: '/training' },
+    readSnapshotFn: loneKnightSnapshot
+  }));
+  rt.start();
+  assert.equal(undefended.rendered.length, 0);
+  rt.applyConfig({ showUndefended: true });
+  assert.equal(undefended.rendered.length, 1); // repainted from the last snapshot
+});
+
 test('applyConfig clamps out-of-range intensity injected past mergeSettings', () => {
   const doc = setupDoc();
   let renderer;

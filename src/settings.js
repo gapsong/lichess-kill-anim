@@ -8,7 +8,12 @@ export const DEFAULT_SETTINGS = {
   intensity: 5,
   soundOn: true,
   buildupMs: 0,
-  shakePieces: ['q']
+  shakePieces: ['q'],
+  // Undefended-piece overlay. OFF by default here so the published extension
+  // keeps its "cosmetic only" default behaviour (the overlay is position
+  // analysis and only ever renders in fair-play-safe contexts — see
+  // play-context.js). The userscript opts itself in (userscript-entry.js).
+  showUndefended: false
 };
 
 export function mergeSettings(stored) {
@@ -22,6 +27,7 @@ export function mergeSettings(stored) {
       ? Math.max(1, Math.min(10, Math.round(intensity)))
       : DEFAULT_SETTINGS.intensity,
     soundOn: typeof s.soundOn === 'boolean' ? s.soundOn : DEFAULT_SETTINGS.soundOn,
+    showUndefended: typeof s.showUndefended === 'boolean' ? s.showUndefended : DEFAULT_SETTINGS.showUndefended,
     buildupMs: Number.isFinite(buildupMs) ? Math.max(0, buildupMs) : DEFAULT_SETTINGS.buildupMs,
     shakePieces: Array.isArray(s.shakePieces)
       ? s.shakePieces.filter((p) => KNOWN_PIECES.includes(p))

@@ -6,6 +6,10 @@ import { ParticleFxRenderer } from './particle-fx-renderer.js';
 import { readSnapshot } from './move-feed.js';
 import { resolvePack } from './packs.js';
 import { PieceSprites } from './piece-sprites.js';
+import { positionAt } from './chess-state.js';
+import { findUndefended } from './undefended.js';
+import { isAssistSafeContext } from './play-context.js';
+import { UndefendedLayer } from './undefended-layer.js';
 
 const PIECE_NAMES = { p: 'Pawn', n: 'Knight', b: 'Bishop', r: 'Rook', q: 'Queen', k: 'King' };
 
@@ -38,6 +42,7 @@ export function createRuntime({
   loc = (typeof location !== 'undefined' ? location : null),
   observerFactory = (cb) => new MutationObserver(cb),
   pieceSprites = null,
+  undefendedLayer = null,
   notify
 } = {}) {
   const settings = { ...config, shakePieces: [...(config?.shakePieces ?? [])] };
@@ -47,7 +52,10 @@ export function createRuntime({
   let currentContext = null;
   let currentSize = 0;
   let observer = null;
+  let lastSnapshot = null;
+  let lastUndefendedSig = null;
   const sprites = pieceSprites ?? (doc ? new PieceSprites({ document: doc }) : null);
+  const undefended = undefendedLayer ?? (doc ? new UndefendedLayer({ document: doc }) : null);
 
   function ensureRenderer() {
     overlay.attach();
@@ -108,8 +116,37 @@ export function createRuntime({
 
   function scan() {
     const snapshot = readSnapshotFn(doc, loc);
+    lastSnapshot = snapshot;
     const events = stream.next(snapshot);
     events.forEach((event) => renderCapture(event, snapshot?.id));
+    updateUndefended(snapshot);
+  }
+
+  // The viewer's colour is the board orientation (the side at the bottom). Used
+  // to label undefended pieces as own (danger) vs enemy (chance); on the analysis
+  // board there is no "player", so orientation is the only available perspective.
+  function viewerColor() {
+    const black = doc?.querySelector?.('.cg-wrap')?.classList?.contains('orientation-black') ?? false;
+    return black ? 'b' : 'w';
+  }
+
+  // Recompute + repaint the undefended-piece markers for the position on screen.
+  // Gated by the toggle AND the fair-play context (never during a live game).
+  // Skips the (replay + attacker) work when nothing that affects the markers —
+  // position, viewed ply or orientation — has changed since the last scan.
+  function updateUndefended(snapshot) {
+    if (!undefended) return;
+    if (!settings.enabled || !settings.showUndefended || !snapshot || !isAssistSafeContext(loc)) {
+      undefended.clear();
+      lastUndefendedSig = null;
+      return;
+    }
+    const myColor = viewerColor();
+    const ply = snapshot.activePly ?? snapshot.sanMoves?.length ?? 0;
+    const sig = `${snapshot.id}|${ply}|${myColor}`;
+    if (sig === lastUndefendedSig) return;
+    lastUndefendedSig = sig;
+    undefended.render(findUndefended(positionAt(snapshot), myColor));
   }
 
   function start() {
@@ -135,11 +172,18 @@ export function createRuntime({
       renderer.soundOn = settings.soundOn;
       renderer.buildupMs = settings.buildupMs;
     }
+    // Reflect a toggled overlay immediately (e.g. from the popup) without waiting
+    // for the next board mutation.
+    if (partial && ('showUndefended' in partial || 'enabled' in partial)) {
+      lastUndefendedSig = null;
+      updateUndefended(lastSnapshot);
+    }
   }
 
   function stop() {
     if (observer) { observer.disconnect(); observer = null; }
     if (frameRequest != null) { cancel(frameRequest); frameRequest = null; }
+    undefended?.clear();
   }
 
   return {
